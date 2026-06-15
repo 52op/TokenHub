@@ -61,8 +61,7 @@ export async function detectProtocols(base, apiKey) {
   };
 
   const protocols = {};
-
-  for (const [name, cfg] of Object.entries(probes)) {
+  const tasks = Object.entries(probes).map(async function([name, cfg]) {
     const entry = { supported: false, url: cfg.url, status: 0, responseTime: 0, error: null };
     const start = Date.now();
     try {
@@ -90,8 +89,9 @@ export async function detectProtocols(base, apiKey) {
       entry.responseTime = Date.now() - start;
     }
     protocols[name] = entry;
-  }
+  });
 
+  await Promise.allSettled(tasks);
   return protocols;
 }
 
@@ -119,8 +119,11 @@ export async function detectModels(base, apiKey, protocols) {
     if (!info.supported) continue;
     const probeUrl = base + "/chat/completions";
     const probeHeaders = buildHeaders(apiKey, proto === "anthropic" ? "anthropic" : "openai");
-    const batchSize = 8;
-    for (let i = 0; i < COMMON_MODELS.length; i += batchSize) {
+    const batchSize = 4;
+    const maxBatches = 2;
+    let batchCount = 0;
+    for (let i = 0; i < COMMON_MODELS.length && batchCount < maxBatches; i += batchSize) {
+      batchCount++;
       const batch = COMMON_MODELS.slice(i, i + batchSize);
       const batchResults = await Promise.allSettled(
         batch.map(async (model) => {
@@ -210,14 +213,31 @@ export async function runDetection(inputUrl, apiKey) {
 
   const allBases = [];
   let recommendedBase = discovered[0].base;
+  let foundSupported = false;
 
-  for (const d of discovered) {
-    const protocols = await detectProtocols(d.base, apiKey);
-    const supported = Object.values(protocols).some((p) => p.supported);
+  for (let idx = 0; idx < discovered.length; idx++) {
+    const d = discovered[idx];
+    let protocols = null;
+
+    if (idx < 2) {
+      protocols = await detectProtocols(d.base, apiKey);
+    }
+
+    const supported = protocols ? Object.values(protocols).some((p) => p.supported) : false;
     let models = null;
-    if (supported) {
+    if (supported && !foundSupported) {
+      foundSupported = true;
       models = await detectModels(d.base, apiKey, protocols);
     }
+
+    if (!protocols) {
+      protocols = {
+        openai_chat: { supported: false, url: d.base + "/chat/completions", status: d.status, responseTime: 0, error: null },
+        openai_responses: { supported: false, url: d.base + "/responses", status: d.status, responseTime: 0, error: null },
+        anthropic: { supported: false, url: d.base + "/messages", status: d.status, responseTime: 0, error: null },
+      };
+    }
+
     allBases.push({ base: d.base, status: d.status, protocols, models });
   }
 
