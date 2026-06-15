@@ -11,5 +11,9 @@ database_id = "629f471f-375a-47fa-8bb6-dd40e853402d"
 AUTH_MODE = "sso"
 SSO_ISSUER = "https://auth.it0731.cn"
 
+[limits]
+subrequest = 1000
+
 [triggers]
+crons = ["*/30 * * * *"]
 crons = ["*/30 * * * *"]
