@@ -8,6 +8,8 @@ import * as keysRoute from "./routes/keys.js";
 import * as healthRoute from "./routes/health.js";
 import * as adminRoute from "./routes/admin.js";
 import * as userRoute from "./routes/user.js";
+import * as testRoute from "./routes/test.js";
+import * as chatRoute from "./routes/chat.js";
 import { renderApp, renderSSOCallback } from "./frontend/html.js";
 
 export default {
@@ -106,6 +108,19 @@ export default {
     // Admin
     if (path.startsWith("/api/admin/")) {
       return adminRoute.handle(request, env, path);
+    }
+
+    // Manual test
+    if (path === "/api/test/endpoint" && request.method === "POST") {
+      return testRoute.handleEndpointTest(request, env);
+    }
+    if (path === "/api/test/model" && request.method === "POST") {
+      return testRoute.handleModelTest(request, env);
+    }
+
+    // Chat
+    if (path === "/api/chat" && request.method === "POST") {
+      return chatRoute.handleChat(request, env);
     }
 
     return new Response("Not Found", { status: 404 });

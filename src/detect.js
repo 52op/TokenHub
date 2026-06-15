@@ -1,43 +1,43 @@
-import { BASE_SUFFIXES, PROBE_PAYLOADS, COMMON_MODELS } from "./config.js";
+import { PROBE_TABLE, PROBE_PAYLOADS, COMMON_MODELS } from "./config.js";
 import { normalizeUrl, buildHeaders, fetchWithTimeout, isEndpointAlive, isApiResponse } from "./utils.js";
 
 export async function discoverBaseUrls(inputUrl, apiKey) {
   const base = normalizeUrl(inputUrl);
-  const headers = buildHeaders(apiKey, "openai");
-  const candidates = BASE_SUFFIXES.map((s) => base + s);
-  const results = [];
+  const resultsMap = new Map();
 
-  for (const candidate of candidates) {
-    const endpoints = [
-      { path: "/chat/completions", method: "POST", body: JSON.stringify(PROBE_PAYLOADS.openai_chat) },
-      { path: "/models", method: "GET", body: null },
-      { path: "/messages", method: "POST", body: JSON.stringify(PROBE_PAYLOADS.anthropic), headers: buildHeaders(apiKey, "anthropic") },
-    ];
+  for (const probe of PROBE_TABLE) {
+    const testUrl = base + probe.test;
+    const inferredBase = base + probe.base;
 
-    for (const ep of endpoints) {
-      const url = candidate + ep.path;
-      try {
-        const resp = await fetchWithTimeout(url, {
-          method: ep.method,
-          headers: ep.headers || headers,
-          body: ep.body,
-        }, 5000);
-        const bodyText = await resp.text();
-        const ct = resp.headers.get("content-type") || "";
-        const alive = isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct);
-        if (alive) {
-          if (!results.find((r) => r.base === candidate)) {
-            results.push({ base: candidate, status: resp.status });
-          }
-          break;
+    try {
+      let headers = { "Content-Type": "application/json" };
+      let body = null;
+
+      if (probe.protocol) {
+        const payload = PROBE_PAYLOADS[probe.protocol];
+        if (payload) {
+          body = JSON.stringify(payload);
+          headers = buildHeaders(apiKey, probe.protocol === "anthropic" ? "anthropic" : "openai");
         }
-      } catch {
-        continue;
       }
+
+      const resp = await fetchWithTimeout(testUrl, { method: probe.method, headers, body }, 5000);
+
+      if (isEndpointAlive(resp.status)) {
+        if (!resultsMap.has(inferredBase)) {
+          resultsMap.set(inferredBase, {
+            base: inferredBase,
+            status: resp.status,
+            probeUrl: testUrl,
+          });
+        }
+      }
+    } catch {
+      continue;
     }
   }
 
-  return results;
+  return [...resultsMap.values()];
 }
 
 export async function detectProtocols(base, apiKey) {
@@ -75,13 +75,13 @@ export async function detectProtocols(base, apiKey) {
       const bodyText = await resp.text();
       const ct = resp.headers.get("content-type") || "";
 
-      if (isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct)) {
+      if (resp.status === 405 || (isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct))) {
         if (name === "openai_chat") {
           entry.supported = bodyText.includes('"object"') && bodyText.includes("chat.completion");
         } else if (name === "openai_responses") {
           entry.supported = bodyText.includes('"object"') && bodyText.includes("response");
         } else if (name === "anthropic") {
-          entry.supported = bodyText.includes('"type"') || resp.status === 400 || resp.status === 401 || resp.status === 403;
+          entry.supported = resp.status === 405 || bodyText.includes('"type"') || resp.status === 400 || resp.status === 401 || resp.status === 403;
         }
       }
     } catch (e) {

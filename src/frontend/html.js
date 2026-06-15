@@ -737,6 +737,34 @@ textarea.text-input {
 
 /* Page not found placeholder */
 
+/* Manual test */
+.manual-test-section { margin-top: 32px; }
+.section-divider { border: none; border-top: 1px solid var(--hairline); margin-bottom: 24px; }
+.test-result { margin-top: 12px; }
+.test-result-item { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 12px; font-size: 13px; }
+.result-status { font-weight: 600; }
+.result-status.ok { color: var(--success); }
+.result-status.err { color: var(--error); }
+.result-time { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.result-error { color: var(--error); margin-top: 4px; }
+.result-body { font-family: var(--font-mono); font-size: 11px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; color: var(--body); }
+.result-chat { font-size: 14px; margin-top: 8px; padding: 8px; background: var(--surface-card); border-radius: var(--radius-sm); line-height: 1.5; }
+
+/* Chat */
+.chat-section { margin-top: 32px; }
+.chat-messages { border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 16px; max-height: 400px; overflow-y: auto; margin-bottom: 12px; background: var(--canvas-soft); }
+.chat-msg { margin-bottom: 12px; display: flex; gap: 8px; }
+.chat-msg:last-child { margin-bottom: 0; }
+.chat-msg .role { font-weight: 600; font-size: 12px; color: var(--muted); min-width: 60px; text-transform: uppercase; letter-spacing: 0.5px; }
+.chat-msg .content { flex: 1; font-size: 14px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; }
+.chat-msg.user .role { color: var(--primary); }
+.chat-msg.assistant .role { color: var(--success); }
+.chat-input-row { display: flex; gap: 8px; align-items: flex-start; }
+.chat-input-row textarea { flex: 1; min-height: 60px; resize: vertical; }
+.chat-model-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.chat-model-bar select { max-width: 250px; }
+.chat-model-bar .label-sm { font-size: 12px; color: var(--muted); font-weight: 500; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .nav-links { gap: 2px; }
@@ -876,6 +904,49 @@ function renderDetectPage() {
       '</div>' +
     '</div>' +
     '<div id="detectResults"></div>' +
+    manualTestHTML() +
+  '</div>';
+}
+
+function manualTestHTML() {
+  return '<div class="manual-test-section">' +
+    '<hr class="section-divider" />' +
+    '<h3 class="display-sm" style="margin-bottom:16px">手动测试</h3>' +
+    '<div class="card">' +
+      '<div class="card-section">' +
+        '<label class="label">路径测试</label>' +
+        '<div class="input-row">' +
+          '<input type="text" id="manualUrl" class="text-input" placeholder="Base URL，如 https://api.cline.bot/v1" />' +
+        '</div>' +
+        '<div class="input-row" style="margin-top:8px">' +
+          '<select id="manualProtocol" class="text-input" style="max-width:200px">' +
+            '<option value="openai_chat">OpenAI Chat</option>' +
+            '<option value="anthropic">Anthropic</option>' +
+            '<option value="openai_responses">OpenAI Responses</option>' +
+          '</select>' +
+          '<button class="btn btn-primary" onclick="manualPathTest()">测试</button>' +
+        '</div>' +
+        '<div id="manualPathResult" class="test-result"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-section">' +
+        '<label class="label">模型测试（发送一条消息验证）</label>' +
+        '<div class="input-row">' +
+          '<input type="text" id="modelTestUrl" class="text-input" placeholder="Base URL" />' +
+          '<input type="password" id="modelTestKey" class="text-input" placeholder="API Key（可选）" />' +
+        '</div>' +
+        '<div class="input-row" style="margin-top:8px">' +
+          '<input type="text" id="modelTestId" class="text-input" placeholder="模型 ID，如 gpt-4o" />' +
+          '<select id="modelTestProtocol" class="text-input" style="max-width:200px">' +
+            '<option value="openai_chat">OpenAI Chat</option>' +
+            '<option value="anthropic">Anthropic</option>' +
+          '</select>' +
+          '<button class="btn btn-primary" onclick="manualModelTest()">测试</button>' +
+        '</div>' +
+        '<div id="modelTestResult" class="test-result"></div>' +
+      '</div>' +
+    '</div>' +
   '</div>';
 }
 
@@ -959,6 +1030,52 @@ async function saveEndpoint() {
   await API.post('/api/endpoints', { url: url, name: url, protocols: '{}', models: '[]' });
   alert('保存成功！');
   navigate('/app');
+}
+
+/* Manual test */
+async function manualPathTest() {
+  const url = document.getElementById('manualUrl').value.trim();
+  const protocol = document.getElementById('manualProtocol').value;
+  const el = document.getElementById('manualPathResult');
+  if (!url) return alert('请输入 URL');
+  el.innerHTML = '<span class="spinner"></span> 测试中...';
+  try {
+    const data = await API.post('/api/test/endpoint', { url, protocol, apiKey: '' });
+    el.innerHTML = '<div class="test-result-item">' +
+      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + data.status + '</div>' +
+      '<div class="result-time">' + data.responseTime + 'ms</div>' +
+      (data.error ? '<div class="result-error">' + escapeHtml(data.error) + '</div>' : '') +
+      (data.body ? '<pre class="result-body">' + escapeHtml(data.body) + '</pre>' : '') +
+    '</div>';
+  } catch (e) {
+    el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function manualModelTest() {
+  const url = document.getElementById('modelTestUrl').value.trim();
+  const apiKey = document.getElementById('modelTestKey').value.trim();
+  const model = document.getElementById('modelTestId').value.trim();
+  const protocol = document.getElementById('modelTestProtocol').value;
+  const el = document.getElementById('modelTestResult');
+  if (!url || !model) return alert('请输入 URL 和模型 ID');
+  el.innerHTML = '<span class="spinner"></span> 测试中...';
+  try {
+    const data = await API.post('/api/test/model', { url, apiKey, model, protocol });
+    let html = '<div class="test-result-item">' +
+      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + data.status + '</div>' +
+      '<div class="result-time">' + data.responseTime + 'ms</div>';
+    if (data.error) html += '<div class="result-error">' + escapeHtml(data.error) + '</div>';
+    if (data.parsed) {
+      const content = (data.parsed.choices && data.parsed.choices[0] && data.parsed.choices[0].message && data.parsed.choices[0].message.content) ||
+        (data.parsed.content && data.parsed.content[0] && data.parsed.content[0].text) || '';
+      if (content) html += '<div class="result-chat">' + escapeHtml(content.substring(0, 500)) + '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
+  }
 }
 
 function renderDashboard() {
@@ -1101,6 +1218,27 @@ async function loadEndpointDetail(id) {
       '</div>' +
     '</div>';
 
+    const defaultProto = protoKeys.length > 0 ? protoKeys[0] : 'openai_chat';
+    html += '<div class="chat-section">' +
+      '<hr class="section-divider" />' +
+      '<h3 class="display-sm" style="margin-bottom:16px">聊天测试</h3>' +
+      '<div class="chat-model-bar">' +
+        '<span class="label-sm">模型:</span>' +
+        '<input type="text" id="chatModel" class="text-input" value="' + escapeHtml(typeof models[0] === 'string' ? models[0] : (models[0]?.id || '')) + '" placeholder="模型 ID" style="max-width:300px" />' +
+        (models.length > 0 ? '<span style="font-size:11px;color:var(--muted)">可用: ' + models.slice(0, 5).map(function(m) { return escapeHtml(typeof m === 'string' ? m : m.id); }).join(', ') + '</span>' : '') +
+        '<button class="btn btn-small btn-secondary" onclick="clearChat()">清空</button>' +
+      '</div>' +
+      '<div class="chat-messages" id="chatMessages">' +
+        '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">输入消息开始对话测试</div>' +
+      '</div>' +
+      '<input type="hidden" id="chatProtocol" value="' + defaultProto + '" />' +
+      '<div class="chat-input-row">' +
+        '<textarea id="chatInput" class="text-input" placeholder="输入消息...（Enter 发送，Shift+Enter 换行）" onkeydown="if(event.key===\\'Enter\\'&&!event.shiftKey){event.preventDefault();sendChatMessage(\\'' + ep.id + '\\')}"></textarea>' +
+        '<button class="btn btn-primary" onclick="sendChatMessage(\\'' + ep.id + '\\')" id="chatSendBtn">发送</button>' +
+      '</div>' +
+      '<div id="chatStatus" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>' +
+    '</div>';
+
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
@@ -1147,6 +1285,74 @@ async function deleteKey(keyId) {
   if (!confirm('确定删除此 Key？')) return;
   await API.del('/api/keys/' + keyId);
   await loadEndpointDetail(location.pathname.split('/')[3]);
+}
+
+/* Chat */
+const chatState = { messages: [] };
+
+function clearChat() {
+  chatState.messages = [];
+  const el = document.getElementById('chatMessages');
+  if (el) el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">对话已清空</div>';
+  document.getElementById('chatStatus').textContent = '';
+}
+
+function renderChatMessages() {
+  const el = document.getElementById('chatMessages');
+  if (!el) return;
+  let html = '';
+  for (const m of chatState.messages) {
+    html += '<div class="chat-msg ' + m.role + '">' +
+      '<div class="role">' + (m.role === 'user' ? '你' : 'AI') + '</div>' +
+      '<div class="content">' + escapeHtml(m.content) + '</div>' +
+    '</div>';
+  }
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMessage(endpointId) {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const model = document.getElementById('chatModel')?.value.trim();
+  if (!model) return alert('请输入或选择模型 ID');
+  const protocol = document.getElementById('chatProtocol')?.value || 'openai_chat';
+
+  input.value = '';
+  chatState.messages.push({ role: 'user', content: msg });
+  renderChatMessages();
+
+  const sendBtn = document.getElementById('chatSendBtn');
+  sendBtn.disabled = true;
+  const statusEl = document.getElementById('chatStatus');
+  statusEl.textContent = '发送中...';
+
+  try {
+    const data = await API.post('/api/chat', {
+      endpointId,
+      model,
+      messages: chatState.messages,
+      protocol,
+    });
+
+    if (data.ok && data.reply) {
+      chatState.messages.push({ role: 'assistant', content: data.reply });
+      renderChatMessages();
+      statusEl.textContent = '响应时间: ' + data.responseTime + 'ms' + (data.usage ? ' | tokens: ' + JSON.stringify(data.usage) : '');
+    } else {
+      const errMsg = 'HTTP ' + data.status + (data.error ? ' ' + data.error : '');
+      statusEl.textContent = errMsg;
+      if (data.raw) {
+        chatState.messages.push({ role: 'assistant', content: '[错误] ' + data.raw.substring(0, 500) });
+        renderChatMessages();
+      }
+    }
+  } catch (e) {
+    statusEl.textContent = '错误: ' + e.message;
+  }
+  sendBtn.disabled = false;
 }
 
 function renderHealthPage() {

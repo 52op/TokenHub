@@ -4,17 +4,38 @@ export const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-export const BASE_SUFFIXES = [
-  "/v1",
-  "/api/v1",
-  "/api",
-  "/openai/v1",
-  "/openai",
-  "/v1beta",
-  "/v2",
-  "/proxy/v1",
-  "/proxy",
-  "",
+export const PROBE_TABLE = [
+  // Standard paths
+  { test: "/v1/chat/completions",   base: "/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/v1/messages",           base: "/v1", method: "POST", protocol: "anthropic" },
+  { test: "/v1/models",            base: "/v1", method: "GET",  protocol: null },
+  // Root-level (no version prefix)
+  { test: "/chat/completions",      base: "",    method: "POST", protocol: "openai_chat" },
+  { test: "/messages",              base: "",    method: "POST", protocol: "anthropic" },
+  { test: "/models",               base: "",    method: "GET",  protocol: null },
+  // Provider subdirectory: /anthropic/v1/...
+  { test: "/anthropic/v1/messages",            base: "/anthropic/v1", method: "POST", protocol: "anthropic" },
+  { test: "/anthropic/v1/chat/completions",    base: "/anthropic/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/anthropic/messages",               base: "/anthropic",   method: "POST", protocol: "anthropic" },
+  // OpenAI subdirectory
+  { test: "/openai/v1/chat/completions", base: "/openai/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/openai/v1/messages",         base: "/openai/v1", method: "POST", protocol: "anthropic" },
+  { test: "/openai/v1/models",          base: "/openai/v1", method: "GET",  protocol: null },
+  { test: "/openai/v1/responses",       base: "/openai/v1", method: "POST", protocol: "openai_responses" },
+  // Claude / DeepSeek
+  { test: "/claude/v1/messages",             base: "/claude/v1", method: "POST", protocol: "anthropic" },
+  { test: "/deepseek/v1/chat/completions",   base: "/deepseek/v1", method: "POST", protocol: "openai_chat" },
+  // Common API gateways
+  { test: "/api/v1/chat/completions",  base: "/api/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/api/v1/messages",         base: "/api/v1", method: "POST", protocol: "anthropic" },
+  { test: "/api/chat/completions",    base: "/api",    method: "POST", protocol: "openai_chat" },
+  { test: "/api/messages",            base: "/api",    method: "POST", protocol: "anthropic" },
+  // Proxy gateway
+  { test: "/proxy/v1/chat/completions", base: "/proxy/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/proxy/v1/messages",         base: "/proxy/v1", method: "POST", protocol: "anthropic" },
+  // Other version prefixes
+  { test: "/v2/chat/completions",      base: "/v2",     method: "POST", protocol: "openai_chat" },
+  { test: "/v1beta/chat/completions",  base: "/v1beta", method: "POST", protocol: "openai_chat" },
 ];
 
 export const PROBE_PAYLOADS = {
