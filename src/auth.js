@@ -1,4 +1,4 @@
-import { getCookieValue, jsonResponse, errorResponse } from "./utils.js";
+import { getCookieValue, jsonResponse, errorResponse, md5 } from "./utils.js";
 
 export async function verifyRS256JWT(token, publicKeyPem, issuer) {
   try {
@@ -72,12 +72,18 @@ export async function findOrCreateSSOUser(env, payload) {
       await env.DB.prepare("UPDATE users SET username = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(payload.username, user.id).run();
     }
+    if (!user.avatar_url && payload.email) {
+      const fallback = `https://cn.cravatar.com/avatar/${md5(payload.email.trim().toLowerCase())}?s=80&d=monsterid`;
+      await env.DB.prepare("UPDATE users SET avatar_url = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(fallback, user.id).run();
+      user.avatar_url = fallback;
+    }
     return user;
   }
 
   const name = payload.username || email.split("@")[0];
   const userRole = payload.role === "admin" ? "admin" : "user";
-  const avatar = payload.avatar_url || "";
+  const avatar = payload.avatar_url || `https://cn.cravatar.com/avatar/${md5(email.trim().toLowerCase())}?s=80&d=monsterid`;
 
   await env.DB.prepare(
     "INSERT INTO users (email, username, role, avatar_url) VALUES (?, ?, ?, ?)"

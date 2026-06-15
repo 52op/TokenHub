@@ -141,8 +141,15 @@ a:hover { text-decoration: underline; }
 .nav-user {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   font-size: 14px;
+}
+
+.nav-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .nav-user-name {
@@ -822,7 +829,9 @@ async function initApp() {
     const user = data.user;
     const navUser = document.getElementById('navUser');
     if (user) {
-      navUser.innerHTML = '<span class="nav-user-name">' + escapeHtml(user.username || user.email) + '</span>' +
+      const avatarUrl = user.avatar_url || '';
+      const avatarHtml = avatarUrl ? '<img class="nav-avatar" src="' + escapeHtml(avatarUrl) + '" alt="" />' : '';
+      navUser.innerHTML = avatarHtml + '<span class="nav-user-name">' + escapeHtml(user.username || user.email) + '</span>' +
         (user.role === 'admin' ? '<span class="badge-admin">admin</span>' : '') +
         '<a href="#" onclick="handleLogout();return false" class="nav-logout">退出</a>';
       const adminLink = document.getElementById('adminLink');
