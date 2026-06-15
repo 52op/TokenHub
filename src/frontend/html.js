@@ -329,6 +329,12 @@ main {
   padding: 11px 15px;
 }
 
+select.text-input {
+  height: 44px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
 .text-input::placeholder {
   color: var(--muted-soft);
 }
@@ -1678,6 +1684,25 @@ async function deleteEndpointCard(id) {
   showToast('已删除');
 }
 
+function toggleCardCollapse(bodyId, arrowId) {
+  var body = document.getElementById(bodyId);
+  var arrow = document.getElementById(arrowId);
+  if (!body) return;
+  var collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  if (arrow) arrow.style.transform = collapsed ? 'rotate(180deg)' : '';
+}
+
+function toggleAddForm(formId) {
+  var form = document.getElementById(formId);
+  if (!form) return;
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (form.style.display !== 'none') {
+    var inp = form.querySelector('input[type="text"], input[type="password"]');
+    if (inp) inp.focus();
+  }
+}
+
 function renderEndpointDetail(id) {
   return '<div class="container">' +
     '<a href="/app" onclick="return navigate(\\'/app\\')" class="back-link">← 返回列表</a>' +
@@ -1697,62 +1722,76 @@ async function loadEndpointDetail(id) {
     const protos = (function() { try { var p = JSON.parse(ep.protocols || '{}'); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
     const models = (function() { try { var m = JSON.parse(ep.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
 
-    let html = '<div class="card">' +
-      '<div class="card-section">' +
-        '<label class="label">名称</label>' +
-        '<input type="text" id="epName" class="text-input" value="' + escapeHtml(ep.name) + '" />' +
+    const protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
+    const protoLabels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
+    const protoBadges = protoKeys.map(function(k) { return '<span class="badge badge-green">' + (protoLabels[k] || k) + '</span>'; }).join(' ') || '<span style="color:var(--muted)">无</span>';
+
+    let html = '<div class="card" id="epSettingsCard">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleCardCollapse(\\'epSettingsBody\\',\\'epSettingsArrow\\')">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex:1;min-width:0">' +
+          '<span style="font-size:14px;font-weight:600;color:var(--ink)">' + escapeHtml(ep.name || ep.url) + '</span>' +
+          '<span style="font-size:12px;color:var(--muted);font-family:var(--font-mono)">' + escapeHtml(ep.url) + '</span>' +
+          protoBadges +
+          '<span class="badge badge-muted">' + keys.length + ' Key</span>' +
+        '</div>' +
+        '<span id="epSettingsArrow" style="font-size:12px;color:var(--muted);transition:transform 0.2s">▼</span>' +
       '</div>' +
-      '<div class="card-section">' +
-        '<label class="label">URL</label>' +
-        '<div class="code-block">' + escapeHtml(ep.url) + '</div>' +
-      '</div>' +
-      '<div class="card-section">' +
-        '<label class="label">备注</label>' +
-        '<textarea id="epNotes" class="text-input" rows="2">' + escapeHtml(ep.notes || '') + '</textarea>' +
-      '</div>' +
-      '<div class="card-section">' +
-        '<label class="label">自动检测</label>' +
-        '<label class="toggle">' +
-          '<input type="checkbox" id="epAutoHealth" ' + (ep.auto_health ? 'checked' : '') + ' />' +
-          '<span>每 ' + (ep.health_interval || 30) + ' 分钟自动检测</span>' +
-        '</label>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:12px">' +
-        '<button class="btn btn-primary" onclick="updateEndpoint(\\'' + ep.id + '\\')">保存</button>' +
-        '<button class="btn btn-secondary" onclick="redetectEndpoint(\\'' + ep.id + '\\')">重新检测</button>' +
-        '<button class="btn btn-secondary" style="color:var(--error);border-color:var(--error)" onclick="deleteEndpoint(\\'' + ep.id + '\\')">删除</button>' +
+      '<div id="epSettingsBody" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--hairline)">' +
+        '<div class="card-section">' +
+          '<label class="label">名称</label>' +
+          '<input type="text" id="epName" class="text-input" value="' + escapeHtml(ep.name) + '" />' +
+        '</div>' +
+        '<div class="card-section">' +
+          '<label class="label">URL</label>' +
+          '<div class="code-block">' + escapeHtml(ep.url) + '</div>' +
+        '</div>' +
+        '<div class="card-section">' +
+          '<label class="label">备注</label>' +
+          '<textarea id="epNotes" class="text-input" rows="2">' + escapeHtml(ep.notes || '') + '</textarea>' +
+        '</div>' +
+        '<div class="card-section">' +
+          '<label class="label">自动检测</label>' +
+          '<label class="toggle">' +
+            '<input type="checkbox" id="epAutoHealth" ' + (ep.auto_health ? 'checked' : '') + ' />' +
+            '<span>每 ' + (ep.health_interval || 30) + ' 分钟自动检测</span>' +
+          '</label>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:12px">' +
+          '<button class="btn btn-primary" onclick="updateEndpoint(\\'' + ep.id + '\\')">保存</button>' +
+          '<button class="btn btn-secondary" onclick="redetectEndpoint(\\'' + ep.id + '\\')">重新检测</button>' +
+          '<button class="btn btn-secondary" style="color:var(--error);border-color:var(--error)" onclick="deleteEndpoint(\\'' + ep.id + '\\')">删除</button>' +
+        '</div>' +
       '</div>' +
     '</div>';
 
-    const protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
     html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">已检测协议</div>' +
       '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
-      (protoKeys.map(function(k) {
-        const labels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
-        return '<span class="badge badge-green">' + (labels[k] || k) + '</span>';
-      }).join(' ') || '<span style="color:var(--muted);font-size:13px">暂无</span>') +
+      (protoKeys.map(function(k) { return '<span class="badge badge-green">' + (protoLabels[k] || k) + '</span>'; }).join(' ') || '<span style="color:var(--muted);font-size:13px">暂无</span>') +
       '</div></div>';
 
-    if (models.length > 0) {
-      html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">模型 (' + models.length + ')</div>' +
-        '<div class="models-grid">' + models.map(function(m) {
-          var mid = typeof m === 'string' ? m : (m.id || '');
-          return '<span class="model-chip available">' + escapeHtml(mid) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\\'' + ep.id + '\\',\\'' + escapeHtml(mid) + '\\')">&times;</span></span>';
-        }).join('') + '</div>' +
-        '<div class="input-row" style="margin-top:10px">' +
-          '<input type="text" id="newModelInput" class="text-input" placeholder="添加模型 ID" style="max-width:300px" />' +
-          '<button class="btn btn-small" onclick="addModelToEndpoint(\\'' + ep.id + '\\')">添加</button>' +
-        '</div></div>';
-    } else {
-      html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">模型 (0)</div>' +
-        '<div style="color:var(--muted);font-size:13px;margin-bottom:8px">暂无模型</div>' +
+    var modelChips = models.map(function(m) {
+      var mid = typeof m === 'string' ? m : (m.id || '');
+      return '<span class="model-chip available">' + escapeHtml(mid) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\\'' + ep.id + '\\',\\'' + escapeHtml(mid) + '\\')">&times;</span></span>';
+    }).join('');
+    html += '<div class="card">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<span class="caption-uppercase">模型 (' + models.length + ')</span>' +
+        '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="toggleAddForm(\\'addModelForm\\')" title="添加模型">+</span>' +
+      '</div>' +
+      (models.length > 0 ? '<div class="models-grid">' + modelChips + '</div>' : '<div style="color:var(--muted);font-size:13px">暂无模型</div>') +
+      '<div id="addModelForm" style="display:none;margin-top:10px">' +
         '<div class="input-row">' +
-          '<input type="text" id="newModelInput" class="text-input" placeholder="添加模型 ID" style="max-width:300px" />' +
+          '<input type="text" id="newModelInput" class="text-input" placeholder="模型 ID" style="max-width:300px" />' +
           '<button class="btn btn-small" onclick="addModelToEndpoint(\\'' + ep.id + '\\')">添加</button>' +
-        '</div></div>';
-    }
+        '</div>' +
+      '</div>' +
+    '</div>';
 
-    html += '<div class="card"><div class="card-header"><span class="caption-uppercase">API Keys (' + keys.length + ')</span></div>' +
+    html += '<div class="card"><div class="card-header">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<span class="caption-uppercase">API Keys (' + keys.length + ')</span>' +
+        '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="toggleAddForm(\\'addKeyForm\\')" title="添加 Key">+</span>' +
+      '</div></div>' +
       '<div class="key-list">';
     for (const k of keys) {
       html += '<div class="key-row" id="key-row-' + k.id + '">' +
@@ -1769,7 +1808,7 @@ async function loadEndpointDetail(id) {
       '</div>';
     }
     html += '</div>' +
-      '<div class="add-key-form">' +
+      '<div id="addKeyForm" class="add-key-form" style="display:none">' +
         '<input type="password" id="newKeyValue" class="text-input" placeholder="新的 API Key" />' +
         '<input type="text" id="newKeyAlias" class="text-input" placeholder="别名（可选）" style="width:150px" />' +
         '<button class="btn btn-primary" onclick="addKey(\\'' + ep.id + '\\')">添加</button>' +
@@ -1780,16 +1819,21 @@ async function loadEndpointDetail(id) {
     const keyOptions = keys.map(function(k) {
       return '<option value="' + k.id + '">' + escapeHtml(k.alias || '未命名') + ' (' + escapeHtml(k.key_masked) + ')</option>';
     }).join('');
+    const modelOptions = models.map(function(m) {
+      var mid = typeof m === 'string' ? m : (m.id || '');
+      return '<option value="' + escapeHtml(mid) + '">' + escapeHtml(mid) + '</option>';
+    }).join('');
+    const chatModelValue = typeof models[0] === 'string' ? models[0] : (models[0]?.id || '');
     html += '<div class="chat-section">' +
       '<hr class="section-divider" />' +
       '<h3 class="display-sm" style="margin-bottom:16px">聊天测试</h3>' +
       '<div class="chat-model-bar">' +
         '<span class="label-sm">模型:</span>' +
-        '<input type="text" id="chatModel" class="text-input" value="' + escapeHtml(typeof models[0] === 'string' ? models[0] : (models[0]?.id || '')) + '" placeholder="模型 ID" style="max-width:300px" />' +
-        '<button class="btn btn-small" onclick="setChatModelAsDefault(\\'' + ep.id + '\\')">设为默认</button>' +
-        (models.length > 0 ? '<span style="font-size:11px;color:var(--muted)">可用: ' + models.slice(0, 5).map(function(m) { return escapeHtml(typeof m === 'string' ? m : m.id); }).join(', ') + '</span>' : '') +
+        (models.length > 0
+          ? '<select id="chatModel" class="text-input" style="max-width:300px">' + modelOptions + '</select>'
+          : '<input type="text" id="chatModel" class="text-input" placeholder="输入模型 ID" style="max-width:300px" />') +
         '<span class="label-sm" style="margin-left:12px">Key:</span>' +
-        '<select id="chatKeyId" class="text-input" style="max-width:250px;height:32px;font-size:13px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
+        '<select id="chatKeyId" class="text-input" style="max-width:250px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
         '<button class="btn btn-small btn-secondary" onclick="clearChat()">清空</button>' +
       '</div>' +
       '<div class="chat-messages" id="chatMessages">' +
@@ -1857,23 +1901,6 @@ async function removeModelFromEndpoint(endpointId, model) {
     await loadEndpointDetail(endpointId);
   } catch (e) {
     showToast('移除失败: ' + e.message, 'error');
-  }
-}
-
-async function setChatModelAsDefault(endpointId) {
-  const model = document.getElementById('chatModel')?.value.trim();
-  if (!model) return showToast('请输入模型 ID', 'info');
-  try {
-    const data = await API.get('/api/endpoints/' + endpointId);
-    const existing = (function() { try { var m = JSON.parse(data.endpoint.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
-    if (!existing.includes(model)) {
-      existing.unshift(model);
-      await API.put('/api/endpoints/' + endpointId, { models: existing });
-    }
-    showToast('已设为默认模型');
-    await loadEndpointDetail(endpointId);
-  } catch (e) {
-    showToast('设置失败: ' + e.message, 'error');
   }
 }
 
