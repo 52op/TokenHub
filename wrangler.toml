@@ -2,6 +2,11 @@ name = "tokenhub"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "tokenhub-db"
+database_id = "629f471f-375a-47fa-8bb6-dd40e853402d"
+
 [vars]
 AUTH_MODE = "sso"
 SSO_ISSUER = "https://auth.it0731.cn"

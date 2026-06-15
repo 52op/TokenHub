@@ -46,30 +46,35 @@ git push -u origin main
 
 创建后进入 DB 详情 → **Console**（控制台），把 `schema.sql` 的完整内容粘贴进去执行。确认 6 张表全部创建成功。
 
-## 5. 绑定 D1 到 Worker
+## 5. 配置 D1 数据库绑定
 
-回到 Worker 详情页（tokenhub）→ **Settings** → **Bindings** → **Add binding**：
+D1 binding 必须写在 `wrangler.toml` 中（已预填），**不要**在 Dashboard UI 中手动绑定。Dashboard
+手动绑定每次 Git 重新部署会被清掉，导致 `env.DB` 为 `undefined` 而报 500 错误。
 
-- **Binding type**：`D1 Database`
-- **Variable name**：`DB`（必须与 wrangler.toml 一致）
-- **Database**：选择 `tokenhub-db`
+打开 `wrangler.toml`，将 `database_id` 替换为你的 D1 数据库 ID：
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "tokenhub-db"
+database_id = "你的D1数据库ID"   # ← 替换为实际 ID
+```
+
+数据库 ID 在 Dashboard → **D1** → `tokenhub-db` 详情页顶部查看（形如 `a1b2c3d4-...`）。
+
+> `database_id` 不是敏感信息（仅为资源标识符），放配置文件中是安全的。
 
 ## 6. 配置环境变量
 
-Worker → **Settings** → **Variables**：
+`AUTH_MODE` 和 `SSO_ISSUER` 已写在 `wrangler.toml` 中，Git 部署会自动注入，**无需**在 Dashboard 重复设置。
 
-**添加明文变量（Add variable）：**
+只需在 Dashboard 添加加密变量：
 
-| Variable name | Value |
-|---|---|
-| `AUTH_MODE` | `sso` |
-| `SSO_ISSUER` | `https://auth.it0731.cn` |
+| Variable name | Value | 位置 |
+|---|---|---|
+| `SSO_PUBLIC_KEY` | 你的 GoAuth RSA 公钥（PEM 全文，带 `\n` 的 TOML 单行格式） | **Secrets**（加密变量） |
 
-**添加加密变量（Add secret）：**
-
-| Variable name | Value |
-|---|---|
-| `SSO_PUBLIC_KEY` | 你的 GoAuth RSA 公钥（PEM 全文） |
+Worker → **Settings** → **Variables** → **Add secret**。
 
 ## 7. 配置 Cron 触发
 
@@ -96,11 +101,11 @@ Worker → **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Tr
 | 代码推送到 GitHub | ☐ |
 | Worker 创建 + Git 连接 | ☐ |
 | D1 数据库创建 + schema 初始化 | ☐ |
-| D1 Binding 关联到 Worker | ☐ |
-| 环境变量 AUTH_MODE + SSO_ISSUER 设置 | ☐ |
-| Secret SSO_PUBLIC_KEY 注入 | ☐ |
-| Cron 触发器配置 | ☐ |
+| `wrangler.toml` 中填入 D1 `database_id` | ☐ |
+| Secret `SSO_PUBLIC_KEY` 注入（Dashboard） | ☐ |
+| Cron 触发器配置（Dashboard） | ☐ |
 | 首次部署成功 | ☐ |
+| 登录验证 + 头像显示确认 | ☐ |
 
 ---
 
