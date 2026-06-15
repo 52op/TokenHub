@@ -1,0 +1,15 @@
+name = "tokenhub"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tokenhub-db"
+database_id = "your-d1-database-id"
+
+[vars]
+AUTH_MODE = "sso"
+SSO_ISSUER = "https://auth.it0731.cn"
+
+[triggers]
+crons = ["*/30 * * * *"]

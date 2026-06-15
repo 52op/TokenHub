@@ -1,0 +1,189 @@
+import { BASE_SUFFIXES, PROBE_PAYLOADS, COMMON_MODELS } from "./config.js";
+import { normalizeUrl, buildHeaders, fetchWithTimeout, isEndpointAlive, isApiResponse } from "./utils.js";
+
+export async function discoverBaseUrls(inputUrl, apiKey) {
+  const base = normalizeUrl(inputUrl);
+  const headers = buildHeaders(apiKey, "openai");
+  const candidates = BASE_SUFFIXES.map((s) => base + s);
+  const results = [];
+
+  for (const candidate of candidates) {
+    const endpoints = [
+      { path: "/chat/completions", method: "POST", body: JSON.stringify(PROBE_PAYLOADS.openai_chat) },
+      { path: "/models", method: "GET", body: null },
+      { path: "/messages", method: "POST", body: JSON.stringify(PROBE_PAYLOADS.anthropic), headers: buildHeaders(apiKey, "anthropic") },
+    ];
+
+    for (const ep of endpoints) {
+      const url = candidate + ep.path;
+      try {
+        const resp = await fetchWithTimeout(url, {
+          method: ep.method,
+          headers: ep.headers || headers,
+          body: ep.body,
+        });
+        const bodyText = await resp.text();
+        const ct = resp.headers.get("content-type") || "";
+        const alive = isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct);
+        if (alive) {
+          if (!results.find((r) => r.base === candidate)) {
+            results.push({ base: candidate, status: resp.status });
+          }
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return results;
+}
+
+export async function detectProtocols(base, apiKey) {
+  const probes = {
+    openai_chat: {
+      url: base + "/chat/completions",
+      payload: PROBE_PAYLOADS.openai_chat,
+      headers: buildHeaders(apiKey, "openai"),
+    },
+    openai_responses: {
+      url: base + "/responses",
+      payload: PROBE_PAYLOADS.openai_responses,
+      headers: buildHeaders(apiKey, "openai"),
+    },
+    anthropic: {
+      url: base + "/messages",
+      payload: PROBE_PAYLOADS.anthropic,
+      headers: buildHeaders(apiKey, "anthropic"),
+    },
+  };
+
+  const protocols = {};
+
+  for (const [name, cfg] of Object.entries(probes)) {
+    const entry = { supported: false, status: 0, responseTime: 0, error: null };
+    const start = Date.now();
+    try {
+      const resp = await fetchWithTimeout(cfg.url, {
+        method: "POST",
+        headers: cfg.headers,
+        body: JSON.stringify(cfg.payload),
+      });
+      entry.status = resp.status;
+      entry.responseTime = Date.now() - start;
+      const bodyText = await resp.text();
+      const ct = resp.headers.get("content-type") || "";
+
+      if (isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct)) {
+        if (name === "openai_chat") {
+          entry.supported = bodyText.includes('"object"') && bodyText.includes("chat.completion");
+        } else if (name === "openai_responses") {
+          entry.supported = bodyText.includes('"object"') && bodyText.includes("response");
+        } else if (name === "anthropic") {
+          entry.supported = bodyText.includes('"type"') || resp.status === 400 || resp.status === 401 || resp.status === 403;
+        }
+      }
+    } catch (e) {
+      entry.error = e.message || "timeout";
+      entry.responseTime = Date.now() - start;
+    }
+    protocols[name] = entry;
+  }
+
+  return protocols;
+}
+
+export async function detectModels(base, apiKey, protocols) {
+  const result = { fromApi: false, models: [] };
+
+  const modelsUrl = base + "/models";
+  const headers = buildHeaders(apiKey, "openai");
+
+  try {
+    const resp = await fetchWithTimeout(modelsUrl, { method: "GET", headers });
+    if (resp.ok) {
+      const data = await resp.json();
+      const list = data.data || data.models || [];
+      if (list.length > 0) {
+        result.fromApi = true;
+        result.models = list.map((m) => (typeof m === "string" ? { id: m } : m));
+        return result;
+      }
+    }
+  } catch {
+  }
+
+  for (const [proto, info] of Object.entries(protocols)) {
+    if (!info.supported) continue;
+    const probeUrl = base + "/chat/completions";
+    const probeHeaders = buildHeaders(apiKey, proto === "anthropic" ? "anthropic" : "openai");
+    const batchSize = 8;
+    for (let i = 0; i < COMMON_MODELS.length; i += batchSize) {
+      const batch = COMMON_MODELS.slice(i, i + batchSize);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (model) => {
+          const payload = proto === "anthropic"
+            ? { model, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }
+            : { model, messages: [{ role: "user", content: "hi" }], max_tokens: 1, stream: false };
+          try {
+            const resp = await fetchWithTimeout(probeUrl, {
+              method: "POST",
+              headers: probeHeaders,
+              body: JSON.stringify(payload),
+            });
+            if (resp.ok || resp.status === 400 || resp.status === 401 || resp.status === 429) {
+              return { id: model, supported: true };
+            }
+            return { id: model, supported: false };
+          } catch {
+            return { id: model, supported: false };
+          }
+        })
+      );
+      for (const r of batchResults) {
+        if (r.status === "fulfilled") {
+          result.models.push(r.value);
+        }
+      }
+    }
+    break;
+  }
+
+  return result;
+}
+
+export async function runDetection(inputUrl, apiKey) {
+  const discovered = await discoverBaseUrls(inputUrl, apiKey);
+
+  if (discovered.length === 0) {
+    return { success: false, error: "未发现有效 API 端点", allBases: [] };
+  }
+
+  const allBases = [];
+  let recommendedBase = discovered[0].base;
+
+  for (const d of discovered) {
+    const protocols = await detectProtocols(d.base, apiKey);
+    const supported = Object.values(protocols).some((p) => p.supported);
+    let models = null;
+    if (supported) {
+      models = await detectModels(d.base, apiKey, protocols);
+    }
+    allBases.push({ base: d.base, status: d.status, protocols, models });
+  }
+
+  const withSupport = allBases.filter((b) => Object.values(b.protocols).some((p) => p.supported));
+  if (withSupport.length > 0) {
+    recommendedBase = withSupport[0].base;
+  }
+
+  const anySupported = withSupport.length > 0;
+
+  return {
+    success: anySupported,
+    recommendedBase,
+    warning: anySupported ? undefined : "发现端点但未检测到支持的协议",
+    allBases,
+  };
+}
