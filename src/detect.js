@@ -5,38 +5,39 @@ export async function discoverBaseUrls(inputUrl, apiKey) {
   const base = normalizeUrl(inputUrl);
   const resultsMap = new Map();
 
-  for (const probe of PROBE_TABLE) {
+  const probes = PROBE_TABLE.map(function(probe) {
     const testUrl = base + probe.test;
     const inferredBase = base + probe.base;
 
-    try {
-      let headers = { "Content-Type": "application/json" };
-      let body = null;
+    return (async function() {
+      try {
+        let headers = { "Content-Type": "application/json" };
+        let body = null;
 
-      if (probe.protocol) {
-        const payload = PROBE_PAYLOADS[probe.protocol];
-        if (payload) {
-          body = JSON.stringify(payload);
-          headers = buildHeaders(apiKey, probe.protocol === "anthropic" ? "anthropic" : "openai");
+        if (probe.protocol) {
+          const payload = PROBE_PAYLOADS[probe.protocol];
+          if (payload) {
+            body = JSON.stringify(payload);
+            headers = buildHeaders(apiKey, probe.protocol === "anthropic" ? "anthropic" : "openai");
+          }
         }
-      }
 
-      const resp = await fetchWithTimeout(testUrl, { method: probe.method, headers, body }, 5000);
+        const resp = await fetchWithTimeout(testUrl, { method: probe.method, headers, body }, 5000);
 
-      if (isEndpointAlive(resp.status)) {
-        if (!resultsMap.has(inferredBase)) {
+        if (isEndpointAlive(resp.status)) {
           resultsMap.set(inferredBase, {
             base: inferredBase,
             status: resp.status,
             probeUrl: testUrl,
           });
         }
+      } catch {
+        // skip failed probes
       }
-    } catch {
-      continue;
-    }
-  }
+    })();
+  });
 
+  await Promise.allSettled(probes);
   return [...resultsMap.values()];
 }
 

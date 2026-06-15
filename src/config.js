@@ -5,11 +5,6 @@ export const CORS_HEADERS = {
 };
 
 export const PROBE_TABLE = [
-  // Common API gateways (fastest to match)
-  { test: "/api/v1/chat/completions",  base: "/api/v1", method: "POST", protocol: "openai_chat" },
-  { test: "/api/v1/messages",         base: "/api/v1", method: "POST", protocol: "anthropic" },
-  { test: "/api/chat/completions",    base: "/api",    method: "POST", protocol: "openai_chat" },
-  { test: "/api/messages",            base: "/api",    method: "POST", protocol: "anthropic" },
   // Standard paths
   { test: "/v1/chat/completions",   base: "/v1", method: "POST", protocol: "openai_chat" },
   { test: "/v1/messages",           base: "/v1", method: "POST", protocol: "anthropic" },
@@ -30,6 +25,11 @@ export const PROBE_TABLE = [
   // Claude / DeepSeek
   { test: "/claude/v1/messages",             base: "/claude/v1", method: "POST", protocol: "anthropic" },
   { test: "/deepseek/v1/chat/completions",   base: "/deepseek/v1", method: "POST", protocol: "openai_chat" },
+  // Common API gateways
+  { test: "/api/v1/chat/completions",  base: "/api/v1", method: "POST", protocol: "openai_chat" },
+  { test: "/api/v1/messages",         base: "/api/v1", method: "POST", protocol: "anthropic" },
+  { test: "/api/chat/completions",    base: "/api",    method: "POST", protocol: "openai_chat" },
+  { test: "/api/messages",            base: "/api",    method: "POST", protocol: "anthropic" },
   // Proxy gateway
   { test: "/proxy/v1/chat/completions", base: "/proxy/v1", method: "POST", protocol: "openai_chat" },
   { test: "/proxy/v1/messages",         base: "/proxy/v1", method: "POST", protocol: "anthropic" },
