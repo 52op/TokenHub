@@ -75,13 +75,15 @@ export async function detectProtocols(base, apiKey) {
       const bodyText = await resp.text();
       const ct = resp.headers.get("content-type") || "";
 
-      if (resp.status === 405 || (isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct))) {
+      if (resp.status === 405) {
+        entry.supported = true;
+      } else if (isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct)) {
         if (name === "openai_chat") {
-          entry.supported = bodyText.includes('"object"') && bodyText.includes("chat.completion");
+          entry.supported = bodyText.includes('"object"') || resp.status === 400;
         } else if (name === "openai_responses") {
-          entry.supported = bodyText.includes('"object"') && bodyText.includes("response");
+          entry.supported = bodyText.includes('"object"') || resp.status === 400;
         } else if (name === "anthropic") {
-          entry.supported = resp.status === 405 || bodyText.includes('"type"') || resp.status === 400 || resp.status === 401 || resp.status === 403;
+          entry.supported = resp.status === 400 || resp.status === 401 || resp.status === 403 || bodyText.includes('"type"');
         }
       }
     } catch (e) {
@@ -120,9 +122,8 @@ export async function detectModels(base, apiKey, protocols) {
     const probeUrl = base + "/chat/completions";
     const probeHeaders = buildHeaders(apiKey, proto === "anthropic" ? "anthropic" : "openai");
     const batchSize = 4;
-    const maxBatches = 2;
     let batchCount = 0;
-    for (let i = 0; i < COMMON_MODELS.length && batchCount < maxBatches; i += batchSize) {
+    for (let i = 0; i < COMMON_MODELS.length && batchCount < 1; i += batchSize) {
       batchCount++;
       const batch = COMMON_MODELS.slice(i, i + batchSize);
       const batchResults = await Promise.allSettled(
@@ -211,6 +212,14 @@ export async function runDetection(inputUrl, apiKey) {
     return { success: false, error: "未发现有效 API 端点", allBases: [] };
   }
 
+  // Sort by path priority: longer+common paths first
+  const PATH_PRIORITY = { "/api/v1": 100, "/v1": 80, "": 60, "/openai/v1": 50, "/api": 40, "/anthropic/v1": 30, "/proxy/v1": 20 };
+  discovered.sort(function(a, b) {
+    const pa = PATH_PRIORITY[a.base.replace(/^https?:\/\/[^\/]+/, "")] || 0;
+    const pb = PATH_PRIORITY[b.base.replace(/^https?:\/\/[^\/]+/, "")] || 0;
+    return pb - pa || a.status - b.status;
+  });
+
   const allBases = [];
   let recommendedBase = discovered[0].base;
   let foundSupported = false;
@@ -219,7 +228,7 @@ export async function runDetection(inputUrl, apiKey) {
     const d = discovered[idx];
     let protocols = null;
 
-    if (idx < 2) {
+    if (idx === 0) {
       protocols = await detectProtocols(d.base, apiKey);
     }
 
