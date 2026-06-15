@@ -1147,6 +1147,7 @@ async function renderPage() {
   try {
     if (path === '/' || path === '') {
       app.innerHTML = renderDetectPage();
+      restoreDetectForm();
     } else if (path === '/app') {
       app.innerHTML = renderDashboard();
       await loadDashboard();
@@ -1855,7 +1856,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     await initApp();
-    restoreDetectForm();
     renderPage();
   } else if (location.pathname !== '/sso/callback') {
     const ssoUrl = 'https://auth.it0731.cn';
