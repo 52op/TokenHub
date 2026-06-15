@@ -1076,7 +1076,7 @@ async function saveEndpoint() {
   const url = document.getElementById('detectUrl').value.trim();
   if (!url) return alert('缺少 URL');
   const name = document.getElementById('saveEpName')?.value.trim() || url;
-  await API.post('/api/endpoints', { url, name, protocols: '{}', models: '[]' });
+  await API.post('/api/endpoints', { url, name, protocols: {}, models: [] });
   alert('保存成功！');
   navigate('/app');
 }
@@ -1220,8 +1220,8 @@ async function loadEndpointDetail(id) {
     const data = await API.get('/api/endpoints/' + id);
     const ep = data.endpoint;
     const keys = data.keys || [];
-    const protos = (function() { try { return JSON.parse(ep.protocols || '{}'); } catch { return {}; } })();
-    const models = (function() { try { return JSON.parse(ep.models || '[]'); } catch { return []; } })();
+    const protos = (function() { try { var p = JSON.parse(ep.protocols || '{}'); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
+    const models = (function() { try { var m = JSON.parse(ep.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
 
     let html = '<div class="card">' +
       '<div class="card-section">' +
