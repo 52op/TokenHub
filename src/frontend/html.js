@@ -965,10 +965,9 @@ function renderDetectResults(data, url, apiKey, customPath) {
     }
 
     // Protocol badges
-    const protoKeys = Object.keys(b.protocols).filter(function(k) { return b.protocols[k].supported; });
-    html += '<div class="caption-uppercase" style="margin-bottom:12px">协议 ' +
-      (protoKeys.length > 0 ? '<span style="font-weight:400;color:var(--muted)">点击 [测试] 验证连通性</span>' : '<span style="font-weight:400;color:var(--muted)">未检测到支持的协议</span>') +
-      '</div>' +
+    const allProtoKeys = Object.keys(b.protocols);
+    const supportedKeys = allProtoKeys.filter(function(k) { return b.protocols[k].supported; });
+    html += '<div class="caption-uppercase" style="margin-bottom:12px">协议</div>' +
       '<div class="protocol-grid">';
 
     const protoLabels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
@@ -985,18 +984,18 @@ function renderDetectResults(data, url, apiKey, customPath) {
         '</div>' +
         '<div class="proto-status">' + statusText + (timeText ? ' · ' + timeText : '') + '</div>' +
         (info.url ? '<div class="proto-url">' + escapeHtml(info.url) + '</div>' : '') +
-        (supported ? '<button class="btn btn-small" style="margin-top:6px" onclick="quickTestProtocol(\\'' + escapeHtml(b.base) + '\\',\\'' + pk + '\\',\\'' + escapeHtml(apiKey) + '\\')">测试</button>' : '') +
+        '<button class="btn btn-small" style="margin-top:6px" onclick="quickTestProtocol(\\'' + escapeHtml(b.base) + '\\',\\'' + pk + '\\',\\'' + escapeHtml(apiKey) + '\\')">测试</button>' +
       '</div>';
     }
     html += '</div>';
 
-    // Quick send row
+    // Quick send row — always show all 3 protocol options
     html += '<div class="quick-test" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)">' +
       '<div class="input-row" style="gap:6px">' +
         '<select id="quickProto" class="text-input" style="max-width:160px">' +
-          protoKeys.map(function(pk) {
-            return '<option value="' + pk + '">' + (protoLabels[pk] || pk) + '</option>';
-          }).join('') +
+          '<option value="openai_chat">OpenAI Chat</option>' +
+          '<option value="anthropic">Anthropic</option>' +
+          '<option value="openai_responses">OpenAI Responses</option>' +
         '</select>' +
         '<input type="text" id="quickModel" class="text-input" placeholder="模型 ID" style="max-width:180px" />' +
         '<input type="text" id="quickMsg" class="text-input" placeholder="输入消息" />' +
