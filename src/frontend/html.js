@@ -427,6 +427,14 @@ textarea.text-input {
   gap: 6px;
 }
 
+.proto-url {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  margin-top: 6px;
+  word-break: break-all;
+}
+
 /* Best base URL */
 .best-base {
   background: var(--surface-card);
@@ -921,6 +929,7 @@ function renderDetectResults(data, url, apiKey) {
       html += '<div class="proto-card ' + (info.supported ? 'ok' : 'no') + '">' +
         '<div class="proto-name">' + label + ' <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
         '<div class="proto-status"><span class="dot ' + dotClass + '"></span>' + (info.status ? 'HTTP ' + info.status : '') + '</div>' +
+        (info.supported && info.url ? '<div class="proto-url">' + escapeHtml(info.url) + '</div>' : '') +
       '</div>';
     }
     html += '</div>';

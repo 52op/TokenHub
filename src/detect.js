@@ -21,7 +21,7 @@ export async function discoverBaseUrls(inputUrl, apiKey) {
           method: ep.method,
           headers: ep.headers || headers,
           body: ep.body,
-        });
+        }, 5000);
         const bodyText = await resp.text();
         const ct = resp.headers.get("content-type") || "";
         const alive = isEndpointAlive(resp.status) && isApiResponse(resp.status, bodyText, ct);
@@ -62,14 +62,14 @@ export async function detectProtocols(base, apiKey) {
   const protocols = {};
 
   for (const [name, cfg] of Object.entries(probes)) {
-    const entry = { supported: false, status: 0, responseTime: 0, error: null };
+    const entry = { supported: false, url: cfg.url, status: 0, responseTime: 0, error: null };
     const start = Date.now();
     try {
       const resp = await fetchWithTimeout(cfg.url, {
         method: "POST",
         headers: cfg.headers,
         body: JSON.stringify(cfg.payload),
-      });
+      }, 8000);
       entry.status = resp.status;
       entry.responseTime = Date.now() - start;
       const bodyText = await resp.text();
@@ -101,7 +101,7 @@ export async function detectModels(base, apiKey, protocols) {
   const headers = buildHeaders(apiKey, "openai");
 
   try {
-    const resp = await fetchWithTimeout(modelsUrl, { method: "GET", headers });
+    const resp = await fetchWithTimeout(modelsUrl, { method: "GET", headers }, 5000);
     if (resp.ok) {
       const data = await resp.json();
       const list = data.data || data.models || [];

@@ -12,6 +12,8 @@ export const BASE_SUFFIXES = [
   "/openai",
   "/v1beta",
   "/v2",
+  "/proxy/v1",
+  "/proxy",
   "",
 ];
 
