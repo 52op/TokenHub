@@ -930,7 +930,8 @@ async function startDetection() {
 
   try {
     if (message && model) {
-      const targetUrl = path ? (url.replace(/\\/+$/, '') + (path.startsWith('/') ? path : '/' + path)) : url;
+      const baseUrl = url.replace(/\\/+$/, '');
+      const targetUrl = path ? (baseUrl + (path.startsWith('/') ? path : '/' + path)) : (baseUrl + '/chat/completions');
       const data = await API.post('/api/test/send', { url: targetUrl, apiKey: key, model, message });
       results.innerHTML = renderSendResult(data, url, key, path, model, message);
     } else {
@@ -1036,7 +1037,8 @@ function renderDetectResults(data, url, apiKey, customPath) {
 }
 
 function renderSendResult(data, url, apiKey, path, model, message) {
-  const fullUrl = path ? (url.replace(/\\/+$/, '') + (path.startsWith('/') ? path : '/' + path)) : url;
+  const baseUrl = url.replace(/\\/+$/, '');
+  const fullUrl = path ? (baseUrl + (path.startsWith('/') ? path : '/' + path)) : (baseUrl + '/chat/completions');
   let html = '<div class="card">' +
     '<div class="caption-uppercase" style="margin-bottom:12px">发送结果</div>' +
     '<div class="result-item">' +

@@ -31,7 +31,7 @@ export async function fetchWithTimeout(url, options, timeoutMs = 10000) {
 
 export function isEndpointAlive(status) {
   if (status >= 200 && status < 300) return true;
-  if ([400, 401, 403, 405, 422, 429].includes(status)) return true;
+  if ([400, 401, 403, 404, 405, 422, 429].includes(status)) return true;
   return false;
 }
 
