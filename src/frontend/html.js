@@ -947,7 +947,7 @@ function renderDashboard() {
   return '<div class="container">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
       '<h2 class="display-sm">我的接口</h2>' +
-      '<a href="/" onclick="return navigate(\'/\')" class="btn btn-primary">+ 新增检测</a>' +
+      '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
     '</div>' +
     '<div class="search-bar">' +
       '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." oninput="loadDashboard()" />' +
@@ -966,7 +966,7 @@ async function loadDashboard() {
     const data = await API.get('/api/endpoints?search=' + encodeURIComponent(search));
     const endpoints = data.endpoints || [];
     if (endpoints.length === 0) {
-      el.innerHTML = '<div class="empty-state">还没有保存的接口。<a href="/" onclick="return navigate(\'/\')">去检测一个</a></div>';
+      el.innerHTML = '<div class="empty-state">还没有保存的接口。<a href="/" onclick="return navigate(\\'/\\')">去检测一个</a></div>';
       return;
     }
     let html = '<div class="endpoint-grid">';
@@ -982,7 +982,7 @@ async function loadDashboard() {
       const keysResp = await API.get('/api/endpoints/' + ep.id + '/keys');
       const keyCount = (keysResp.keys || []).length;
 
-      html += '<div class="endpoint-card" onclick="navigate(\'/app/endpoint/' + ep.id + '\')">' +
+      html += '<div class="endpoint-card" onclick="navigate(\\'/app/endpoint/' + ep.id + '\\')">' +
         '<div class="ep-name">' + escapeHtml(ep.name || ep.url) + '</div>' +
         '<div class="ep-url">' + escapeHtml(ep.url) + '</div>' +
         '<div style="display:flex;gap:4px;align-items:center;margin-top:8px">' +
@@ -1001,7 +1001,7 @@ async function loadDashboard() {
 
 function renderEndpointDetail(id) {
   return '<div class="container">' +
-    '<a href="/app" onclick="return navigate(\'/app\')" class="back-link">← 返回列表</a>' +
+    '<a href="/app" onclick="return navigate(\\'/app\\')" class="back-link">← 返回列表</a>' +
     '<div id="endpointDetail"></div>' +
   '</div>';
 }
@@ -1039,9 +1039,9 @@ async function loadEndpointDetail(id) {
         '</label>' +
       '</div>' +
       '<div style="display:flex;gap:8px;margin-top:12px">' +
-        '<button class="btn btn-primary" onclick="updateEndpoint(\'' + ep.id + '\')">保存</button>' +
-        '<button class="btn btn-secondary" onclick="redetectEndpoint(\'' + ep.id + '\')">重新检测</button>' +
-        '<button class="btn btn-secondary" style="color:var(--error);border-color:var(--error)" onclick="deleteEndpoint(\'' + ep.id + '\')">删除</button>' +
+        '<button class="btn btn-primary" onclick="updateEndpoint(\\'' + ep.id + '\\')">保存</button>' +
+        '<button class="btn btn-secondary" onclick="redetectEndpoint(\\'' + ep.id + '\\')">重新检测</button>' +
+        '<button class="btn btn-secondary" style="color:var(--error);border-color:var(--error)" onclick="deleteEndpoint(\\'' + ep.id + '\\')">删除</button>' +
       '</div>' +
     '</div>';
 
@@ -1070,8 +1070,8 @@ async function loadEndpointDetail(id) {
           '<span style="font-size:12px;color:var(--muted)">' + (k.last_checked_at ? formatTime(k.last_checked_at) : '未检测') + '</span>' +
         '</div>' +
         '<div class="key-actions">' +
-          '<button class="btn btn-small" onclick="checkKey(\'' + k.id + '\')">检测</button>' +
-          '<button class="btn btn-small" onclick="deleteKey(\'' + k.id + '\')">删除</button>' +
+          '<button class="btn btn-small" onclick="checkKey(\\'' + k.id + '\\')">检测</button>' +
+          '<button class="btn btn-small" onclick="deleteKey(\\'' + k.id + '\\')">删除</button>' +
         '</div>' +
       '</div>';
     }
@@ -1079,7 +1079,7 @@ async function loadEndpointDetail(id) {
       '<div class="add-key-form">' +
         '<input type="password" id="newKeyValue" class="text-input" placeholder="新的 API Key" />' +
         '<input type="text" id="newKeyAlias" class="text-input" placeholder="别名（可选）" style="width:150px" />' +
-        '<button class="btn btn-primary" onclick="addKey(\'' + ep.id + '\')">添加</button>' +
+        '<button class="btn btn-primary" onclick="addKey(\\'' + ep.id + '\\')">添加</button>' +
       '</div>' +
     '</div>';
 
@@ -1204,7 +1204,7 @@ async function loadAdminPage() {
         '<td>' + escapeHtml(u.email) + '</td>' +
         '<td><span class="badge ' + (u.role === 'admin' ? 'badge-purple' : 'badge-muted') + '">' + u.role + '</span></td>' +
         '<td>' + formatTime(u.created_at) + '</td>' +
-        '<td><button class="btn btn-small" onclick="if(confirm(\'确定删除此用户？\')) deleteUser(\'' + u.id + '\')">删除</button></td>' +
+        '<td><button class="btn btn-small" onclick="if(confirm(\\'确定删除此用户？\\')) deleteUser(\\'' + u.id + '\\')">删除</button></td>' +
       '</tr>';
     }
     html += '</table></div>';
