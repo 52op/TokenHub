@@ -71,9 +71,10 @@ export async function handleChat(request, env) {
         reply = content.map(c => c.text || "").join("");
         usage = parsed.usage || null;
       } else {
-        const choice = (parsed.choices || [])[0];
+        const data = parsed.data || parsed;
+        const choice = (data.choices || [])[0];
         if (choice) reply = choice.message?.content || choice.delta?.content || "";
-        usage = parsed.usage || null;
+        usage = data.usage || parsed.usage || null;
       }
     }
 

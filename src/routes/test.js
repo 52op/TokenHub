@@ -75,7 +75,8 @@ export async function handleDirectSend(request, env) {
       if (url.includes("/messages")) {
         reply = (parsed.content || []).map(function(c) { return c.text || ""; }).join("");
       } else {
-        const choice = (parsed.choices || [])[0];
+        const data = parsed.data || parsed;
+        const choice = (data.choices || [])[0];
         if (choice) reply = choice.message?.content || choice.delta?.content || "";
       }
     }
