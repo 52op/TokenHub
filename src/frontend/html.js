@@ -809,6 +809,8 @@ textarea.text-input {
 .chat-msg .content th, .chat-msg .content td { border: 1px solid var(--hairline-strong); padding: 4px 8px; text-align: left; }
 .chat-msg .content th { background: var(--canvas-soft); font-weight: 600; }
 .chat-msg.user .role { color: var(--primary); }
+.chat-msg.error .role { color: var(--error); }
+.chat-msg.error .content { background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 10px; }
 .chat-msg.assistant .role { color: var(--success); }
 .chat-input-row { display: flex; gap: 8px; align-items: flex-start; }
 .chat-input-row textarea { flex: 1; min-height: 60px; resize: vertical; }
@@ -1764,11 +1766,6 @@ async function loadEndpointDetail(id) {
       '</div>' +
     '</div>';
 
-    html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">已检测协议</div>' +
-      '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
-      (protoKeys.map(function(k) { return '<span class="badge badge-green">' + (protoLabels[k] || k) + '</span>'; }).join(' ') || '<span style="color:var(--muted);font-size:13px">暂无</span>') +
-      '</div></div>';
-
     var modelChips = models.map(function(m) {
       var mid = typeof m === 'string' ? m : (m.id || '');
       return '<span class="model-chip available">' + escapeHtml(mid) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\\'' + ep.id + '\\',\\'' + escapeHtml(mid) + '\\')">&times;</span></span>';
@@ -1823,31 +1820,39 @@ async function loadEndpointDetail(id) {
       var mid = typeof m === 'string' ? m : (m.id || '');
       return '<option value="' + escapeHtml(mid) + '">' + escapeHtml(mid) + '</option>';
     }).join('');
-    const chatModelValue = typeof models[0] === 'string' ? models[0] : (models[0]?.id || '');
+    const protoOptions = [
+      { value: 'openai_chat', label: 'OpenAI Chat' },
+      { value: 'openai_responses', label: 'OpenAI Responses' },
+      { value: 'anthropic', label: 'Anthropic' }
+    ].map(function(p) {
+      return '<option value="' + p.value + '"' + (p.value === defaultProto ? ' selected' : '') + '>' + p.label + '</option>';
+    }).join('');
     html += '<div class="chat-section">' +
       '<hr class="section-divider" />' +
       '<h3 class="display-sm" style="margin-bottom:16px">聊天测试</h3>' +
       '<div class="chat-model-bar">' +
-        '<span class="label-sm">模型:</span>' +
+        '<span class="label-sm">协议:</span>' +
+        '<select id="chatProtocol" class="text-input" style="max-width:180px">' + protoOptions + '</select>' +
+        '<span class="label-sm" style="margin-left:8px">模型:</span>' +
         (models.length > 0
-          ? '<select id="chatModel" class="text-input" style="max-width:300px">' + modelOptions + '</select>'
-          : '<input type="text" id="chatModel" class="text-input" placeholder="输入模型 ID" style="max-width:300px" />') +
-        '<span class="label-sm" style="margin-left:12px">Key:</span>' +
-        '<select id="chatKeyId" class="text-input" style="max-width:250px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
+          ? '<select id="chatModel" class="text-input" style="max-width:250px">' + modelOptions + '</select>'
+          : '<input type="text" id="chatModel" class="text-input" placeholder="输入模型 ID" style="max-width:250px" />') +
+        '<span class="label-sm" style="margin-left:8px">Key:</span>' +
+        '<select id="chatKeyId" class="text-input" style="max-width:220px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
         '<button class="btn btn-small btn-secondary" onclick="clearChat()">清空</button>' +
       '</div>' +
       '<div class="chat-messages" id="chatMessages">' +
         '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">输入消息开始对话测试</div>' +
       '</div>' +
-      '<input type="hidden" id="chatProtocol" value="' + defaultProto + '" />' +
       '<div class="chat-input-row">' +
         '<textarea id="chatInput" class="text-input" placeholder="输入消息...（Enter 发送，Shift+Enter 换行）" onkeydown="if(event.key===\\'Enter\\'&&!event.shiftKey){event.preventDefault();sendChatMessage(\\'' + ep.id + '\\')}"></textarea>' +
         '<button class="btn btn-primary" onclick="sendChatMessage(\\'' + ep.id + '\\')" id="chatSendBtn">发送</button>' +
       '</div>' +
-      '<div id="chatStatus" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>' +
     '</div>';
 
     el.innerHTML = html;
+    loadChatHistory(id);
+    renderChatMessages();
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
   }
@@ -1940,27 +1945,69 @@ async function deleteKeyRow(keyId) {
 }
 
 /* Chat */
-const chatState = { messages: [] };
+var LS_CHAT = 'tokenhub_chat_history';
+var chatState = { messages: [], endpointId: '' };
+
+function loadChatHistory(endpointId) {
+  try {
+    var raw = localStorage.getItem(LS_CHAT);
+    var map = raw ? JSON.parse(raw) : {};
+    chatState.messages = map[endpointId] || [];
+    chatState.endpointId = endpointId;
+  } catch (e) { chatState.messages = []; chatState.endpointId = endpointId; }
+}
+
+function saveChatHistory() {
+  try {
+    var raw = localStorage.getItem(LS_CHAT);
+    var map = raw ? JSON.parse(raw) : {};
+    map[chatState.endpointId] = chatState.messages;
+    localStorage.setItem(LS_CHAT, JSON.stringify(map));
+  } catch (e) {}
+}
 
 function clearChat() {
   chatState.messages = [];
+  saveChatHistory();
   const el = document.getElementById('chatMessages');
   if (el) el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">对话已清空</div>';
-  document.getElementById('chatStatus').textContent = '';
 }
 
 function renderChatMessages() {
   const el = document.getElementById('chatMessages');
   if (!el) return;
   let html = '';
-  for (const m of chatState.messages) {
-    var contentHtml = m.role === 'assistant' ? renderMarkdown(m.content) : escapeHtml(m.content);
-    html += '<div class="chat-msg ' + m.role + '">' +
-      '<div class="role">' + (m.role === 'user' ? '你' : 'AI') + '</div>' +
-      '<div class="content">' + contentHtml + '</div>' +
-    '</div>';
+  for (var i = 0; i < chatState.messages.length; i++) {
+    var m = chatState.messages[i];
+    if (m.role === 'error') {
+      html += '<div class="chat-msg error">' +
+        '<div class="role" style="color:var(--error)">错误</div>' +
+        '<div class="content">' +
+          '<div style="color:var(--error);margin-bottom:6px">' + escapeHtml(m.content) + '</div>' +
+          (m.retryIndex !== undefined ? '<button class="btn btn-small" onclick="retryChatMessage(' + m.retryIndex + ')">重发</button>' : '') +
+        '</div>' +
+      '</div>';
+    } else if (m.role === 'assistant') {
+      var usageHtml = m.usage ? '<div style="font-size:11px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px solid var(--hairline)">tokens: ' + escapeHtml(JSON.stringify(m.usage)) + '</div>' : '';
+      var timeHtml = m.responseTime ? '<span style="font-size:11px;color:var(--muted);margin-left:8px">' + m.responseTime + 'ms</span>' : '';
+      html += '<div class="chat-msg assistant">' +
+        '<div class="role">AI' + timeHtml + '</div>' +
+        '<div class="content">' +
+          '<div style="position:relative">' +
+            '<div>' + renderMarkdown(m.content) + '</div>' +
+            '<button class="btn-small-ghost" style="position:absolute;top:0;right:0;font-size:11px" onclick="copyChatContent(this)" data-content="' + escapeHtml(m.content).replace(/"/g, '&quot;').replace(/\n/g, '\\n') + '">复制</button>' +
+          '</div>' +
+          usageHtml +
+        '</div>' +
+      '</div>';
+    } else {
+      html += '<div class="chat-msg user">' +
+        '<div class="role">你</div>' +
+        '<div class="content">' + escapeHtml(m.content) + '</div>' +
+      '</div>';
+    }
   }
-  el.innerHTML = html;
+  el.innerHTML = html || '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">输入消息开始对话测试</div>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -1974,9 +2021,28 @@ function renderMarkdown(text) {
   return escapeHtml(text);
 }
 
-async function sendChatMessage(endpointId) {
+function copyChatContent(btn) {
+  var content = btn.getAttribute('data-content').replace(/\\n/g, '\n').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  navigator.clipboard.writeText(content).then(function() {
+    btn.textContent = '已复制';
+    setTimeout(function() { btn.textContent = '复制'; }, 1500);
+  });
+}
+
+async function retryChatMessage(msgIndex) {
+  var failedMsg = chatState.messages[msgIndex];
+  if (!failedMsg || failedMsg.role !== 'error') return;
+  var userMsg = chatState.messages[msgIndex - 1];
+  if (!userMsg || userMsg.role !== 'user') return;
+  chatState.messages.splice(msgIndex, 1);
+  saveChatHistory();
+  renderChatMessages();
+  await sendChatMessage(chatState.endpointId, userMsg.content);
+}
+
+async function sendChatMessage(endpointId, retryContent) {
   const input = document.getElementById('chatInput');
-  const msg = input.value.trim();
+  const msg = retryContent || (input ? input.value.trim() : '');
   if (!msg) return;
 
   const model = document.getElementById('chatModel')?.value.trim();
@@ -1984,40 +2050,39 @@ async function sendChatMessage(endpointId) {
   const protocol = document.getElementById('chatProtocol')?.value || 'openai_chat';
   const keyId = document.getElementById('chatKeyId')?.value || '';
 
-  input.value = '';
-  chatState.messages.push({ role: 'user', content: msg });
+  if (!retryContent && input) input.value = '';
+  if (!retryContent) {
+    chatState.messages.push({ role: 'user', content: msg });
+    saveChatHistory();
+  }
   renderChatMessages();
 
   const sendBtn = document.getElementById('chatSendBtn');
-  sendBtn.disabled = true;
-  const statusEl = document.getElementById('chatStatus');
-  statusEl.textContent = '发送中...';
+  if (sendBtn) sendBtn.disabled = true;
 
   try {
     const data = await API.post('/api/chat', {
       endpointId,
       model,
-      messages: chatState.messages,
+      messages: chatState.messages.filter(function(m) { return m.role !== 'error'; }),
       protocol,
       keyId,
     });
 
     if (data.ok && data.reply) {
-      chatState.messages.push({ role: 'assistant', content: data.reply });
-      renderChatMessages();
-      statusEl.textContent = '响应时间: ' + data.responseTime + 'ms' + (data.usage ? ' | tokens: ' + JSON.stringify(data.usage) : '');
+      chatState.messages.push({ role: 'assistant', content: data.reply, usage: data.usage, responseTime: data.responseTime });
     } else {
-      const errMsg = 'HTTP ' + data.status + (data.error ? ' ' + data.error : '');
-      statusEl.textContent = errMsg;
-      if (data.raw) {
-        chatState.messages.push({ role: 'assistant', content: '[错误] ' + data.raw.substring(0, 500) });
-        renderChatMessages();
-      }
+      var errMsg = 'HTTP ' + data.status + (data.error ? ': ' + data.error : '');
+      chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length - 1 });
     }
+    saveChatHistory();
+    renderChatMessages();
   } catch (e) {
-    statusEl.textContent = '错误: ' + e.message;
+    chatState.messages.push({ role: 'error', content: e.message, retryIndex: chatState.messages.length - 1 });
+    saveChatHistory();
+    renderChatMessages();
   }
-  sendBtn.disabled = false;
+  if (sendBtn) sendBtn.disabled = false;
 }
 
 function renderHealthPage() {
