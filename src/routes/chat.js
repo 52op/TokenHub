@@ -32,9 +32,9 @@ export async function handleChat(request, env) {
     }
 
     const key = await env.DB.prepare(
-      "SELECT id, value FROM api_keys WHERE endpoint_id = ? ORDER BY created_at DESC LIMIT 1"
+      "SELECT id, key_value FROM api_keys WHERE endpoint_id = ? ORDER BY created_at DESC LIMIT 1"
     ).bind(endpointId).first();
-    if (key) apiKey = key.value;
+    if (key) apiKey = key.key_value;
   } else if (body.url) {
     baseUrl = body.url;
     apiKey = body.apiKey || "";
