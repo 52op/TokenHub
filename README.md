@@ -1,6 +1,7 @@
 # TokenHub
 
 AI API 接口智能检测与管理工具，部署在 Cloudflare Workers 上。
+[tokenhub.it0731.cn](https://tokenhub.it0731.cn)
 
 ## 功能
 
