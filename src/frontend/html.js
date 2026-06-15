@@ -1087,6 +1087,61 @@ function updateKeyLabel() {
   tooltip.style.display = 'none';
 }
 
+/* Pending models */
+var LS_PENDING_MODELS = 'tokenhub_pending_models';
+
+function getPendingModels(url) {
+  try { var raw = localStorage.getItem(LS_PENDING_MODELS); var map = raw ? JSON.parse(raw) : {}; return map[url] || []; } catch (e) { return []; }
+}
+
+function addPendingModel(url, model) {
+  try {
+    var raw = localStorage.getItem(LS_PENDING_MODELS);
+    var map = raw ? JSON.parse(raw) : {};
+    if (!map[url]) map[url] = [];
+    if (!map[url].includes(model)) map[url].push(model);
+    localStorage.setItem(LS_PENDING_MODELS, JSON.stringify(map));
+  } catch (e) {}
+}
+
+function clearPendingModels(url) {
+  try {
+    var raw = localStorage.getItem(LS_PENDING_MODELS);
+    var map = raw ? JSON.parse(raw) : {};
+    delete map[url];
+    localStorage.setItem(LS_PENDING_MODELS, JSON.stringify(map));
+  } catch (e) {}
+}
+
+function showModelAddPrompt(baseUrl, model, anchorEl) {
+  var existing = document.getElementById('modelAddPrompt');
+  if (existing) existing.remove();
+  var rect = anchorEl.getBoundingClientRect();
+  var el = document.createElement('div');
+  el.id = 'modelAddPrompt';
+  el.className = 'key-tooltip';
+  el.style.top = (rect.bottom + 4) + 'px';
+  el.style.left = rect.left + 'px';
+  el.style.display = 'block';
+  el.innerHTML = '<div style="margin-bottom:6px;color:var(--body);font-size:12px">✓ 模型可用，添加到接口？</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn btn-small btn-secondary" onclick="document.getElementById(\\'modelAddPrompt\\').remove()">忽略</button>' +
+      '<button class="btn btn-small btn-primary" onclick="confirmAddModel(\\'' + escapeHtml(baseUrl) + '\\',\\'' + escapeHtml(model) + '\\')">添加</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  setTimeout(function() {
+    document.addEventListener('click', function _close(e) {
+      if (!el.contains(e.target)) { el.remove(); document.removeEventListener('click', _close); }
+    });
+  }, 10);
+}
+
+function confirmAddModel(baseUrl, model) {
+  addPendingModel(baseUrl, model);
+  document.getElementById('modelAddPrompt')?.remove();
+  showToast('模型 ' + model + ' 已加入待保存列表');
+}
+
 /* Quick add */
 async function quickAddEndpoint() {
   var urlEl = document.getElementById('detectUrl');
@@ -1097,13 +1152,22 @@ async function quickAddEndpoint() {
   var path = pathEl ? pathEl.value.trim() : '';
   var fullUrl = path ? (baseUrl + (path.startsWith('/') ? path : '/' + path)) : baseUrl;
   var key = keyEl ? keyEl.value.trim() : '';
+  var model = document.getElementById('detectModel')?.value.trim() || '';
+  var pending = getPendingModels(baseUrl);
+  var allModels = model ? [...new Set([model, ...pending])] : pending;
   try {
-    var data = await API.post('/api/endpoints', { url: fullUrl, name: fullUrl, protocols: {}, models: [] });
+    var data = await API.post('/api/endpoints', { url: fullUrl, name: fullUrl, protocols: {}, models: allModels });
     var epId = data.endpoint?.id;
+    var existed = data.endpoint?._existed;
     if (key && epId) {
-      await API.post('/api/endpoints/' + epId + '/keys', { key_value: key, alias: '' });
+      var keyData = await API.post('/api/endpoints/' + epId + '/keys', { key_value: key, alias: '' });
+      if (keyData.key?._existed) showToast('接口已存在，Key 已关联');
+      else if (existed) showToast('接口已存在，新 Key 已添加');
+      else showToast('已保存到仪表盘');
+    } else {
+      showToast(existed ? '接口已存在，已更新' : '已保存到仪表盘');
     }
-    showToast('已保存到仪表盘');
+    clearPendingModels(baseUrl);
     navigate('/app');
   } catch (e) {
     showToast('保存失败: ' + e.message, 'error');
@@ -1113,13 +1177,21 @@ async function quickAddEndpoint() {
 async function quickAddProtocolCard(baseUrl, protocol, apiKey) {
   var protos = {};
   protos[protocol] = true;
+  var model = document.getElementById('detectModel')?.value.trim() || '';
+  var pending = getPendingModels(baseUrl);
+  var allModels = model ? [...new Set([model, ...pending])] : pending;
   try {
-    var data = await API.post('/api/endpoints', { url: baseUrl, name: baseUrl, protocols: protos, models: [] });
+    var data = await API.post('/api/endpoints', { url: baseUrl, name: baseUrl, protocols: protos, models: allModels });
     var epId = data.endpoint?.id;
+    var existed = data.endpoint?._existed;
     if (apiKey && epId) {
-      await API.post('/api/endpoints/' + epId + '/keys', { key_value: apiKey, alias: '' });
+      var keyData = await API.post('/api/endpoints/' + epId + '/keys', { key_value: apiKey, alias: '' });
+      if (keyData.key?._existed) showToast('接口已存在，Key 已关联');
+      else if (existed) showToast('接口已存在，新 Key 已添加');
+      else showToast('已保存到仪表盘');
+    } else {
+      showToast(existed ? '接口已存在，已更新' : '已保存到仪表盘');
     }
-    showToast('已保存到仪表盘');
   } catch (e) {
     showToast('保存失败: ' + e.message, 'error');
   }
@@ -1412,7 +1484,11 @@ async function saveEndpoint() {
   if (!url) return showToast('缺少 URL', 'info');
   const name = document.getElementById('saveEpName')?.value.trim() || url;
   const saveUrl = detectedBaseUrl || url;
-  await API.post('/api/endpoints', { url: saveUrl, name, protocols: {}, models: [] });
+  const model = document.getElementById('detectModel')?.value.trim() || '';
+  const pending = getPendingModels(url);
+  const allModels = model ? [...new Set([model, ...pending])] : pending;
+  await API.post('/api/endpoints', { url: saveUrl, name, protocols: {}, models: allModels });
+  clearPendingModels(url);
   showToast('保存成功！');
   navigate('/app');
 }
@@ -1459,7 +1535,13 @@ async function quickSend(baseUrl, apiKey) {
 async function quickVerifyModel(baseUrl, model, apiKey) {
   try {
     const data = await API.post('/api/test/model', { url: baseUrl, apiKey, model, protocol: 'openai_chat' });
-    showToast('模型 ' + model + ': HTTP ' + data.status + (data.ok ? ' ✓' : ' ✗'));
+    if (data.ok) {
+      showToast('模型 ' + model + ': HTTP ' + data.status + ' ✓');
+      var btn = event?.target;
+      if (btn) showModelAddPrompt(baseUrl, model, btn);
+    } else {
+      showToast('模型 ' + model + ': HTTP ' + data.status + ' ✗', 'error');
+    }
   } catch (e) {
     showToast('验证失败: ' + e.message, 'error');
   }
@@ -1653,7 +1735,21 @@ async function loadEndpointDetail(id) {
 
     if (models.length > 0) {
       html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">模型 (' + models.length + ')</div>' +
-        '<div class="models-grid">' + models.map(function(m) { return '<span class="model-chip available">' + escapeHtml(m) + '</span>'; }).join('') + '</div></div>';
+        '<div class="models-grid">' + models.map(function(m) {
+          var mid = typeof m === 'string' ? m : (m.id || '');
+          return '<span class="model-chip available">' + escapeHtml(mid) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\\'' + ep.id + '\\',\\'' + escapeHtml(mid) + '\\')">&times;</span></span>';
+        }).join('') + '</div>' +
+        '<div class="input-row" style="margin-top:10px">' +
+          '<input type="text" id="newModelInput" class="text-input" placeholder="添加模型 ID" style="max-width:300px" />' +
+          '<button class="btn btn-small" onclick="addModelToEndpoint(\\'' + ep.id + '\\')">添加</button>' +
+        '</div></div>';
+    } else {
+      html += '<div class="card"><div class="caption-uppercase" style="margin-bottom:8px">模型 (0)</div>' +
+        '<div style="color:var(--muted);font-size:13px;margin-bottom:8px">暂无模型</div>' +
+        '<div class="input-row">' +
+          '<input type="text" id="newModelInput" class="text-input" placeholder="添加模型 ID" style="max-width:300px" />' +
+          '<button class="btn btn-small" onclick="addModelToEndpoint(\\'' + ep.id + '\\')">添加</button>' +
+        '</div></div>';
     }
 
     html += '<div class="card"><div class="card-header"><span class="caption-uppercase">API Keys (' + keys.length + ')</span></div>' +
@@ -1690,6 +1786,7 @@ async function loadEndpointDetail(id) {
       '<div class="chat-model-bar">' +
         '<span class="label-sm">模型:</span>' +
         '<input type="text" id="chatModel" class="text-input" value="' + escapeHtml(typeof models[0] === 'string' ? models[0] : (models[0]?.id || '')) + '" placeholder="模型 ID" style="max-width:300px" />' +
+        '<button class="btn btn-small" onclick="setChatModelAsDefault(\\'' + ep.id + '\\')">设为默认</button>' +
         (models.length > 0 ? '<span style="font-size:11px;color:var(--muted)">可用: ' + models.slice(0, 5).map(function(m) { return escapeHtml(typeof m === 'string' ? m : m.id); }).join(', ') + '</span>' : '') +
         '<span class="label-sm" style="margin-left:12px">Key:</span>' +
         '<select id="chatKeyId" class="text-input" style="max-width:250px;height:32px;font-size:13px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
@@ -1730,6 +1827,54 @@ async function deleteEndpoint(id) {
   if (!confirm('确定删除此接口及所有 Key？')) return;
   await API.del('/api/endpoints/' + id);
   navigate('/app');
+}
+
+async function addModelToEndpoint(endpointId) {
+  const input = document.getElementById('newModelInput');
+  const model = input?.value.trim();
+  if (!model) return showToast('请输入模型 ID', 'info');
+  try {
+    const data = await API.get('/api/endpoints/' + endpointId);
+    const existing = (function() { try { var m = JSON.parse(data.endpoint.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    if (existing.includes(model)) return showToast('模型已存在', 'info');
+    existing.push(model);
+    await API.put('/api/endpoints/' + endpointId, { models: existing });
+    input.value = '';
+    showToast('已添加');
+    await loadEndpointDetail(endpointId);
+  } catch (e) {
+    showToast('添加失败: ' + e.message, 'error');
+  }
+}
+
+async function removeModelFromEndpoint(endpointId, model) {
+  try {
+    const data = await API.get('/api/endpoints/' + endpointId);
+    const existing = (function() { try { var m = JSON.parse(data.endpoint.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    const filtered = existing.filter(function(m) { return m !== model; });
+    await API.put('/api/endpoints/' + endpointId, { models: filtered });
+    showToast('已移除');
+    await loadEndpointDetail(endpointId);
+  } catch (e) {
+    showToast('移除失败: ' + e.message, 'error');
+  }
+}
+
+async function setChatModelAsDefault(endpointId) {
+  const model = document.getElementById('chatModel')?.value.trim();
+  if (!model) return showToast('请输入模型 ID', 'info');
+  try {
+    const data = await API.get('/api/endpoints/' + endpointId);
+    const existing = (function() { try { var m = JSON.parse(data.endpoint.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    if (!existing.includes(model)) {
+      existing.unshift(model);
+      await API.put('/api/endpoints/' + endpointId, { models: existing });
+    }
+    showToast('已设为默认模型');
+    await loadEndpointDetail(endpointId);
+  } catch (e) {
+    showToast('设置失败: ' + e.message, 'error');
+  }
 }
 
 async function addKey(endpointId) {

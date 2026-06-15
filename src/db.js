@@ -39,6 +39,22 @@ export async function getEndpoint(env, id, userId) {
 
 export async function createEndpoint(env, userId, data) {
   const { name, url, source_url, protocols, models, notes } = data;
+
+  const existing = await env.DB.prepare(
+    "SELECT * FROM endpoints WHERE user_id = ? AND url = ?"
+  ).bind(userId, url).first();
+
+  if (existing) {
+    const mergedProtos = { ...(JSON.parse(existing.protocols || '{}') || {}), ...(protocols || {}) };
+    const existingModels = (function() { try { var m = JSON.parse(existing.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    const newModels = models || [];
+    const mergedModels = [...new Set([...existingModels, ...newModels])];
+    await env.DB.prepare(
+      "UPDATE endpoints SET protocols = ?, models = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(JSON.stringify(mergedProtos), JSON.stringify(mergedModels), existing.id).run();
+    return { ...(await env.DB.prepare("SELECT * FROM endpoints WHERE id = ?").bind(existing.id).first()), _existed: true };
+  }
+
   await env.DB.prepare(
     `INSERT INTO endpoints (user_id, name, url, source_url, protocols, models, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -57,6 +73,10 @@ export async function updateEndpoint(env, id, userId, data) {
       updates.push(`${key} = ?`);
       binds.push(data[key]);
     }
+  }
+  if (data.models !== undefined) {
+    updates.push("models = ?");
+    binds.push(JSON.stringify(data.models));
   }
   if (updates.length === 0) return null;
   updates.push("updated_at = datetime('now')");
@@ -100,6 +120,11 @@ export async function getKeyById(env, id, userId) {
 }
 
 export async function createKey(env, userId, endpointId, keyValue, alias) {
+  const existing = await env.DB.prepare(
+    "SELECT id, endpoint_id, alias, SUBSTR(key_value, 1, 3) || '...' || SUBSTR(key_value, -4) as key_masked, created_at FROM api_keys WHERE endpoint_id = ? AND key_value = ?"
+  ).bind(endpointId, keyValue).first();
+  if (existing) return { ...existing, _existed: true };
+
   await env.DB.prepare(
     "INSERT INTO api_keys (endpoint_id, user_id, key_value, alias) VALUES (?, ?, ?, ?)"
   ).bind(endpointId, userId, keyValue, alias || "").run();
