@@ -1,14 +1,16 @@
 // ==================== Endpoints ====================
 
 export async function getEndpoints(env, userId, { search, sort, order, page, limit }) {
-  let sql = "SELECT * FROM endpoints WHERE user_id = ?";
+  let sql = `SELECT e.*,
+    (SELECT COUNT(*) FROM api_keys k WHERE k.endpoint_id = e.id) as key_count
+    FROM endpoints e WHERE e.user_id = ?`;
   const binds = [userId];
   if (search) {
-    sql += " AND (name LIKE ? OR url LIKE ? OR notes LIKE ?)";
+    sql += " AND (e.name LIKE ? OR e.url LIKE ? OR e.notes LIKE ?)";
     const q = `%${search}%`;
     binds.push(q, q, q);
   }
-  const sortCol = sort === "name" ? "name" : "created_at";
+  const sortCol = sort === "name" ? "e.name" : "e.created_at";
   const ord = order === "asc" ? "ASC" : "DESC";
   sql += ` ORDER BY ${sortCol} ${ord}`;
   const pg = Math.max(1, page || 1);

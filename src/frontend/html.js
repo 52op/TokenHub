@@ -531,6 +531,7 @@ textarea.text-input {
   padding: 20px;
   cursor: pointer;
   transition: box-shadow 0.15s, border-color 0.15s;
+  position: relative;
 }
 
 .endpoint-card:hover {
@@ -788,6 +789,19 @@ textarea.text-input {
 .chat-msg:last-child { margin-bottom: 0; }
 .chat-msg .role { font-weight: 600; font-size: 12px; color: var(--muted); min-width: 60px; text-transform: uppercase; letter-spacing: 0.5px; }
 .chat-msg .content { flex: 1; font-size: 14px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; }
+.chat-msg .content p { margin: 0 0 8px 0; }
+.chat-msg .content p:last-child { margin-bottom: 0; }
+.chat-msg .content pre { background: var(--surface-dark); color: var(--on-dark); padding: 10px 14px; border-radius: var(--radius-sm); overflow-x: auto; margin: 6px 0; font-size: 12px; line-height: 1.5; }
+.chat-msg .content code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-strong); padding: 1px 4px; border-radius: 3px; }
+.chat-msg .content pre code { background: none; padding: 0; }
+.chat-msg .content ul, .chat-msg .content ol { margin: 6px 0; padding-left: 20px; }
+.chat-msg .content li { margin-bottom: 2px; }
+.chat-msg .content blockquote { border-left: 3px solid var(--hairline-strong); padding-left: 12px; color: var(--body); margin: 6px 0; }
+.chat-msg .content h1, .chat-msg .content h2, .chat-msg .content h3 { margin: 12px 0 6px 0; font-size: 15px; }
+.chat-msg .content h1:first-child, .chat-msg .content h2:first-child, .chat-msg .content h3:first-child { margin-top: 0; }
+.chat-msg .content table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.chat-msg .content th, .chat-msg .content td { border: 1px solid var(--hairline-strong); padding: 4px 8px; text-align: left; }
+.chat-msg .content th { background: var(--canvas-soft); font-weight: 600; }
 .chat-msg.user .role { color: var(--primary); }
 .chat-msg.assistant .role { color: var(--success); }
 .chat-input-row { display: flex; gap: 8px; align-items: flex-start; }
@@ -1474,13 +1488,54 @@ function renderDashboard() {
   return '<div class="container">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
       '<h2 class="display-sm">我的接口</h2>' +
-      '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-secondary" id="batchModeBtn" onclick="toggleBatchMode()">批量删除</button>' +
+        '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
+      '</div>' +
+    '</div>' +
+    '<div id="batchBar" style="display:none;margin-bottom:12px;padding:10px 16px;background:var(--canvas-soft);border-radius:var(--radius-md);font-size:13px;color:var(--body)">' +
+      '<label class="toggle" style="margin-right:12px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /> <span>全选</span></label>' +
+      '<button class="btn btn-small" style="color:var(--error);border-color:var(--error)" onclick="batchDeleteEndpoints()">删除选中</button>' +
     '</div>' +
     '<div class="search-bar">' +
       '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." oninput="loadDashboard()" />' +
     '</div>' +
     '<div id="endpointList"></div>' +
   '</div>';
+}
+
+var batchMode = false;
+function toggleBatchMode() {
+  batchMode = !batchMode;
+  var bar = document.getElementById('batchBar');
+  var btn = document.getElementById('batchModeBtn');
+  if (bar) bar.style.display = batchMode ? '' : 'none';
+  if (btn) btn.textContent = batchMode ? '取消' : '批量删除';
+  document.querySelectorAll('.ep-cb').forEach(function(el) { el.style.display = batchMode ? '' : 'none'; });
+  document.querySelectorAll('.ep-del-btn').forEach(function(el) { el.style.display = batchMode ? 'none' : ''; });
+  if (!batchMode) document.querySelectorAll('.ep-cb input').forEach(function(el) { el.checked = false; });
+}
+
+function toggleSelectAll() {
+  var checked = document.getElementById('selectAllCb')?.checked;
+  document.querySelectorAll('.ep-cb input').forEach(function(el) { el.checked = checked; });
+}
+
+async function batchDeleteEndpoints() {
+  var cbs = document.querySelectorAll('.ep-cb input:checked');
+  if (cbs.length === 0) return showToast('请先选择接口', 'info');
+  if (!confirm('确定删除选中的 ' + cbs.length + ' 个接口？')) return;
+  var ids = Array.from(cbs).map(function(cb) { return cb.dataset.id; });
+  try {
+    for (var i = 0; i < ids.length; i++) {
+      await API.del('/api/endpoints/' + ids[i]);
+    }
+    showToast('已删除 ' + ids.length + ' 个接口');
+    batchMode = false;
+    await loadDashboard();
+  } catch (e) {
+    showToast('删除失败: ' + e.message, 'error');
+  }
 }
 
 async function loadDashboard() {
@@ -1506,10 +1561,13 @@ async function loadDashboard() {
         return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
       }).join(' ');
 
-      const keysResp = await API.get('/api/endpoints/' + ep.id + '/keys');
-      const keyCount = (keysResp.keys || []).length;
+      const keyCount = ep.key_count || 0;
 
-      html += '<div class="endpoint-card" onclick="navigate(\\'/app/endpoint/' + ep.id + '\\')">' +
+      html += '<div class="endpoint-card" id="ep-card-' + ep.id + '" onclick="navigate(\\'/app/endpoint/' + ep.id + '\\')">' +
+        '<div class="ep-cb" style="display:' + (batchMode ? '' : 'none') + ';position:absolute;top:12px;left:12px;z-index:2" onclick="event.stopPropagation()">' +
+          '<input type="checkbox" data-id="' + ep.id + '" />' +
+        '</div>' +
+        '<button class="btn-small ep-del-btn" style="position:absolute;top:12px;right:12px;z-index:2;font-size:11px;color:var(--error);border:1px solid var(--error);background:var(--surface-card);cursor:pointer;padding:2px 8px;border-radius:var(--radius-sm)" onclick="event.stopPropagation();deleteEndpointCard(\\'' + ep.id + '\\')">删除</button>' +
         '<div class="ep-name">' + escapeHtml(ep.name || ep.url) + '</div>' +
         '<div class="ep-url">' + escapeHtml(ep.url) + '</div>' +
         '<div style="display:flex;gap:4px;align-items:center;margin-top:8px">' +
@@ -1521,9 +1579,21 @@ async function loadDashboard() {
     }
     html += '</div>';
     el.innerHTML = html;
+    if (batchMode) {
+      document.querySelectorAll('.ep-cb').forEach(function(el) { el.style.display = ''; });
+      document.querySelectorAll('.ep-del-btn').forEach(function(el) { el.style.display = 'none'; });
+    }
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
   }
+}
+
+async function deleteEndpointCard(id) {
+  if (!confirm('确定删除此接口及所有 Key？')) return;
+  await API.del('/api/endpoints/' + id);
+  var card = document.getElementById('ep-card-' + id);
+  if (card) card.remove();
+  showToast('已删除');
 }
 
 function renderEndpointDetail(id) {
@@ -1589,16 +1659,16 @@ async function loadEndpointDetail(id) {
     html += '<div class="card"><div class="card-header"><span class="caption-uppercase">API Keys (' + keys.length + ')</span></div>' +
       '<div class="key-list">';
     for (const k of keys) {
-      html += '<div class="key-row">' +
+      html += '<div class="key-row" id="key-row-' + k.id + '">' +
         '<div class="key-info">' +
           '<span class="key-alias">' + escapeHtml(k.alias || '未命名') + '</span>' +
           '<span class="key-masked" style="font-family:var(--font-mono);color:var(--muted);font-size:13px">' + escapeHtml(k.key_masked) + '</span>' +
-          '<span class="key-status dot ' + (k.last_status ? 'dot-green' : 'dot-gray') + '"></span>' +
-          '<span style="font-size:12px;color:var(--muted)">' + (k.last_checked_at ? formatTime(k.last_checked_at) : '未检测') + '</span>' +
+          '<span class="key-status dot ' + (k.last_status ? 'dot-green' : 'dot-gray') + '" id="key-status-' + k.id + '"></span>' +
+          '<span style="font-size:12px;color:var(--muted)" id="key-time-' + k.id + '">' + (k.last_checked_at ? formatTime(k.last_checked_at) : '未检测') + '</span>' +
         '</div>' +
         '<div class="key-actions">' +
-          '<button class="btn btn-small" onclick="checkKey(\\'' + k.id + '\\')">检测</button>' +
-          '<button class="btn btn-small" onclick="deleteKey(\\'' + k.id + '\\')">删除</button>' +
+          '<button class="btn btn-small" id="key-check-btn-' + k.id + '" onclick="checkKey(\\'' + k.id + '\\')">检测</button>' +
+          '<button class="btn btn-small" onclick="deleteKeyRow(\\'' + k.id + '\\')">删除</button>' +
         '</div>' +
       '</div>';
     }
@@ -1611,6 +1681,9 @@ async function loadEndpointDetail(id) {
     '</div>';
 
     const defaultProto = protoKeys.length > 0 ? protoKeys[0] : 'openai_chat';
+    const keyOptions = keys.map(function(k) {
+      return '<option value="' + k.id + '">' + escapeHtml(k.alias || '未命名') + ' (' + escapeHtml(k.key_masked) + ')</option>';
+    }).join('');
     html += '<div class="chat-section">' +
       '<hr class="section-divider" />' +
       '<h3 class="display-sm" style="margin-bottom:16px">聊天测试</h3>' +
@@ -1618,6 +1691,8 @@ async function loadEndpointDetail(id) {
         '<span class="label-sm">模型:</span>' +
         '<input type="text" id="chatModel" class="text-input" value="' + escapeHtml(typeof models[0] === 'string' ? models[0] : (models[0]?.id || '')) + '" placeholder="模型 ID" style="max-width:300px" />' +
         (models.length > 0 ? '<span style="font-size:11px;color:var(--muted)">可用: ' + models.slice(0, 5).map(function(m) { return escapeHtml(typeof m === 'string' ? m : m.id); }).join(', ') + '</span>' : '') +
+        '<span class="label-sm" style="margin-left:12px">Key:</span>' +
+        '<select id="chatKeyId" class="text-input" style="max-width:250px;height:32px;font-size:13px">' + (keyOptions || '<option value="">无可用 Key</option>') + '</select>' +
         '<button class="btn btn-small btn-secondary" onclick="clearChat()">清空</button>' +
       '</div>' +
       '<div class="chat-messages" id="chatMessages">' +
@@ -1668,15 +1743,28 @@ async function addKey(endpointId) {
 }
 
 async function checkKey(keyId) {
-  const data = await API.post('/api/keys/' + keyId + '/check');
-  showToast(data.is_alive ? '存活 (HTTP ' + data.status_code + ')' : '不可达 (HTTP ' + data.status_code + ')', data.is_alive ? 'success' : 'error');
-  await loadEndpointDetail(location.pathname.split('/')[3]);
+  const btn = document.getElementById('key-check-btn-' + keyId);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const data = await API.post('/api/keys/' + keyId + '/check');
+    const statusEl = document.getElementById('key-status-' + keyId);
+    const timeEl = document.getElementById('key-time-' + keyId);
+    if (statusEl) { statusEl.className = 'key-status dot ' + (data.is_alive ? 'dot-green' : 'dot-red'); }
+    if (timeEl) { timeEl.textContent = formatTime(new Date().toISOString()); }
+    showToast(data.is_alive ? '存活 (HTTP ' + data.status_code + ')' : '不可达 (HTTP ' + data.status_code + ')', data.is_alive ? 'success' : 'error');
+  } catch (e) {
+    showToast('检测失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '检测'; }
+  }
 }
 
-async function deleteKey(keyId) {
+async function deleteKeyRow(keyId) {
   if (!confirm('确定删除此 Key？')) return;
   await API.del('/api/keys/' + keyId);
-  await loadEndpointDetail(location.pathname.split('/')[3]);
+  var row = document.getElementById('key-row-' + keyId);
+  if (row) row.remove();
+  showToast('已删除');
 }
 
 /* Chat */
@@ -1694,13 +1782,24 @@ function renderChatMessages() {
   if (!el) return;
   let html = '';
   for (const m of chatState.messages) {
+    var contentHtml = m.role === 'assistant' ? renderMarkdown(m.content) : escapeHtml(m.content);
     html += '<div class="chat-msg ' + m.role + '">' +
       '<div class="role">' + (m.role === 'user' ? '你' : 'AI') + '</div>' +
-      '<div class="content">' + escapeHtml(m.content) + '</div>' +
+      '<div class="content">' + contentHtml + '</div>' +
     '</div>';
   }
   el.innerHTML = html;
   el.scrollTop = el.scrollHeight;
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  try {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      return marked.parse(text, { breaks: true });
+    }
+  } catch (e) {}
+  return escapeHtml(text);
 }
 
 async function sendChatMessage(endpointId) {
@@ -1711,6 +1810,7 @@ async function sendChatMessage(endpointId) {
   const model = document.getElementById('chatModel')?.value.trim();
   if (!model) return showToast('请输入或选择模型 ID', 'info');
   const protocol = document.getElementById('chatProtocol')?.value || 'openai_chat';
+  const keyId = document.getElementById('chatKeyId')?.value || '';
 
   input.value = '';
   chatState.messages.push({ role: 'user', content: msg });
@@ -1727,6 +1827,7 @@ async function sendChatMessage(endpointId) {
       model,
       messages: chatState.messages,
       protocol,
+      keyId,
     });
 
     if (data.ok && data.reply) {
@@ -1875,6 +1976,7 @@ export function renderApp(user) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>${CSS}</style>
 </head>
 <body>

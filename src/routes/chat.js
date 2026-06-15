@@ -31,9 +31,9 @@ export async function handleChat(request, env) {
       protocol = keys[0] || "openai_chat";
     }
 
-    const key = await env.DB.prepare(
-      "SELECT id, key_value FROM api_keys WHERE endpoint_id = ? ORDER BY created_at DESC LIMIT 1"
-    ).bind(endpointId).first();
+    const key = body.keyId
+      ? await env.DB.prepare("SELECT id, key_value FROM api_keys WHERE id = ? AND endpoint_id = ?").bind(body.keyId, endpointId).first()
+      : await env.DB.prepare("SELECT id, key_value FROM api_keys WHERE endpoint_id = ? ORDER BY created_at DESC LIMIT 1").bind(endpointId).first();
     if (key) apiKey = key.key_value;
   } else if (body.url) {
     baseUrl = body.url;
