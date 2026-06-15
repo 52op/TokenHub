@@ -1151,12 +1151,17 @@ function confirmAddModel(baseUrl, model) {
   showToast('模型 ' + model + ' 已加入待保存列表');
 }
 
+function isLoggedIn() {
+  return !!localStorage.getItem(TOKEN_KEY);
+}
+
 /* Quick add */
 async function quickAddEndpoint() {
   var urlEl = document.getElementById('detectUrl');
   var keyEl = document.getElementById('detectKey');
   var pathEl = document.getElementById('detectPath');
   if (!urlEl || !urlEl.value.trim()) return showToast('请输入 API URL', 'info');
+  if (!isLoggedIn()) { showToast('请先登录后再保存', 'info'); doLogin(); return; }
   var baseUrl = urlEl.value.trim().replace(/\\/+$/, '');
   var path = pathEl ? pathEl.value.trim() : '';
   var fullUrl = path ? (baseUrl + (path.startsWith('/') ? path : '/' + path)) : baseUrl;
@@ -1184,6 +1189,7 @@ async function quickAddEndpoint() {
 }
 
 async function quickAddProtocolCard(baseUrl, protocol, apiKey) {
+  if (!isLoggedIn()) { showToast('请先登录后再保存', 'info'); doLogin(); return; }
   var protos = {};
   protos[protocol] = true;
   var model = document.getElementById('detectModel')?.value.trim() || '';
@@ -1238,6 +1244,12 @@ async function renderPage() {
   const path = location.pathname;
   const app = document.getElementById('app');
   if (!app) return;
+
+  const isPublicPage = path === '/' || path === '';
+  if (!isPublicPage && !isLoggedIn()) {
+    doLogin();
+    return;
+  }
 
   try {
     if (path === '/' || path === '') {
@@ -1524,6 +1536,7 @@ function renderSendResult(data, url, apiKey, path, model, message) {
 }
 
 async function saveEndpoint() {
+  if (!isLoggedIn()) { showToast('请先登录后再保存', 'info'); doLogin(); return; }
   const url = document.getElementById('detectUrl').value.trim();
   if (!url) return showToast('缺少 URL', 'info');
   const name = document.getElementById('saveEpName')?.value.trim() || url;
@@ -2188,6 +2201,20 @@ function renderAdminPage() {
   return '<div class="container">' +
     '<h2 class="display-sm" style="margin-bottom:24px">管理后台</h2>' +
     '<div class="card">' +
+      '<div class="caption-uppercase" style="margin-bottom:12px">站点设置</div>' +
+      '<div id="siteSettingsForm" style="display:grid;gap:12px">' +
+        '<div><label class="label">站点名称</label><input type="text" id="setSiteName" class="text-input" placeholder="TokenHub" /></div>' +
+        '<div><label class="label">站点标题（SEO Title）</label><input type="text" id="setSiteTitle" class="text-input" placeholder="TokenHub - AI API 接口管理平台" /></div>' +
+        '<div><label class="label">站点描述（SEO Description）</label><textarea id="setSiteDesc" class="text-input" rows="2" placeholder="一站式 AI API 接口检测、Key 管理、健康监控平台"></textarea></div>' +
+        '<div><label class="label">关键词（SEO Keywords）</label><input type="text" id="setSiteKeywords" class="text-input" placeholder="AI, API, 接口检测, Key管理" /></div>' +
+        '<div><label class="label">Logo URL</label><input type="text" id="setSiteLogo" class="text-input" placeholder="https://example.com/logo.png" /></div>' +
+        '<div><label class="label">Favicon URL</label><input type="text" id="setSiteFavicon" class="text-input" placeholder="https://example.com/favicon.ico" /></div>' +
+        '<div><label class="label">页脚文字</label><input type="text" id="setSiteFooter" class="text-input" placeholder="© 2026 TokenHub" /></div>' +
+        '<div><label class="label">OG 图片（社交分享）</label><input type="text" id="setSiteOgImage" class="text-input" placeholder="https://example.com/og.png" /></div>' +
+        '<div style="margin-top:4px"><button class="btn btn-primary" onclick="saveSiteSettings()">保存设置</button></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card" style="margin-top:16px">' +
       '<div class="caption-uppercase" style="margin-bottom:12px">用户管理</div>' +
       '<input type="text" id="adminSearch" class="text-input" placeholder="搜索用户..." oninput="loadAdminPage()" />' +
     '</div>' +
@@ -2195,7 +2222,35 @@ function renderAdminPage() {
   '</div>';
 }
 
+async function loadSiteSettings() {
+  try {
+    const data = await API.get('/api/admin/settings');
+    const s = data.settings || {};
+    var fields = { site_name: 'setSiteName', site_title: 'setSiteTitle', site_desc: 'setSiteDesc', site_keywords: 'setSiteKeywords', site_logo: 'setSiteLogo', site_favicon: 'setSiteFavicon', site_footer: 'setSiteFooter', site_og_image: 'setSiteOgImage' };
+    for (const [key, id] of Object.entries(fields)) {
+      var el = document.getElementById(id);
+      if (el) el.value = s[key] || '';
+    }
+  } catch (e) {}
+}
+
+async function saveSiteSettings() {
+  var body = {
+    site_name: document.getElementById('setSiteName')?.value || '',
+    site_title: document.getElementById('setSiteTitle')?.value || '',
+    site_desc: document.getElementById('setSiteDesc')?.value || '',
+    site_keywords: document.getElementById('setSiteKeywords')?.value || '',
+    site_logo: document.getElementById('setSiteLogo')?.value || '',
+    site_favicon: document.getElementById('setSiteFavicon')?.value || '',
+    site_footer: document.getElementById('setSiteFooter')?.value || '',
+    site_og_image: document.getElementById('setSiteOgImage')?.value || '',
+  };
+  await API.put('/api/admin/settings', body);
+  showToast('站点设置已保存');
+}
+
 async function loadAdminPage() {
+  await loadSiteSettings();
   const el = document.getElementById('adminUserList');
   if (!el) return;
   const search = document.getElementById('adminSearch')?.value || '';
@@ -2248,45 +2303,93 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   const token = localStorage.getItem(TOKEN_KEY);
+  const isPublicPage = location.pathname === '/' || location.pathname === '';
   if (token) {
     await initApp();
     renderPage();
+  } else if (isPublicPage) {
+    var navUser = document.getElementById('navUser');
+    if (navUser) navUser.innerHTML = '<a href="#" onclick="doLogin();return false" class="btn btn-small btn-primary" style="height:32px;padding:4px 14px">登录</a>';
+    document.querySelectorAll('.auth-only').forEach(function(el) { el.style.display = 'none'; });
+    renderPage();
   } else if (location.pathname !== '/sso/callback') {
-    const ssoUrl = 'https://auth.it0731.cn';
-    const redirect = encodeURIComponent(location.origin + '/sso/callback');
-    location.href = ssoUrl + '/login?redirect=' + redirect;
+    doLogin();
   }
 });
-`;
 
-export function renderApp(user) {
+function doLogin() {
+  var ssoUrl = 'https://auth.it0731.cn';
+  var redirect = encodeURIComponent(location.origin + '/sso/callback');
+  location.href = ssoUrl + '/login?redirect=' + redirect;
+}`;
+
+export function renderApp(user, siteSettings) {
+  var s = siteSettings || {};
+  var siteName = s.site_name || 'TokenHub';
+  var siteTitle = s.site_title || 'TokenHub - AI API 接口管理平台';
+  var siteDesc = s.site_desc || '一站式 AI API 接口检测、Key 管理、健康监控平台';
+  var siteKeywords = s.site_keywords || 'AI, API, 接口检测, Key管理, 健康监控';
+  var siteLogo = s.site_logo || '';
+  var siteFavicon = s.site_favicon || '';
+  var siteFooter = s.site_footer || '';
+  var siteOgImage = s.site_og_image || '';
+  var siteUrl = s._url || '';
+
+  var faviconTag = siteFavicon ? '<link rel="icon" href="' + siteFavicon + '">' : '';
+  var logoHtml = siteLogo ? '<img src="' + siteLogo + '" alt="' + siteName + '" style="height:28px;margin-right:4px">' : '';
+  var footerHtml = siteFooter ? '<footer style="text-align:center;padding:24px;color:var(--muted);font-size:13px;border-top:1px solid var(--hairline);margin-top:48px">' + siteFooter + '</footer>' : '';
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TokenHub</title>
+  <title>${siteTitle}</title>
+  <meta name="description" content="${siteDesc}">
+  <meta name="keywords" content="${siteKeywords}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${siteTitle}">
+  <meta property="og:description" content="${siteDesc}">
+  ${siteOgImage ? '<meta property="og:image" content="' + siteOgImage + '">' : ''}
+  <meta property="og:site_name" content="${siteName}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${siteTitle}">
+  <meta name="twitter:description" content="${siteDesc}">
+  ${siteOgImage ? '<meta name="twitter:image" content="' + siteOgImage + '">' : ''}
+  ${faviconTag}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "${siteName}",
+    "description": "${siteDesc}",
+    "url": "${siteUrl}",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web"
+  }
+  </script>
   <style>${CSS}</style>
 </head>
 <body>
   <nav class="top-nav">
     <div class="nav-inner">
-      <a href="/" onclick="return navigate('/')" class="logo">TokenHub</a>
+      <a href="/" onclick="return navigate('/')" class="logo">${logoHtml}${siteName}</a>
       <div class="nav-links" id="navLinks">
         <a href="/" onclick="return navigate('/')" data-nav>检测</a>
-        <a href="/app" onclick="return navigate('/app')" data-nav>仪表盘</a>
-        <a href="/app/health" onclick="return navigate('/app/health')" data-nav>健康</a>
-        <a href="/app/admin" onclick="return navigate('/app/admin')" data-nav id="adminLink" style="display:none">管理</a>
+        <a href="/app" onclick="return navigate('/app')" data-nav id="navDashboard" class="auth-only">仪表盘</a>
+        <a href="/app/health" onclick="return navigate('/app/health')" data-nav id="navHealth" class="auth-only">健康</a>
+        <a href="/app/admin" onclick="return navigate('/app/admin')" data-nav id="adminLink" class="auth-only" style="display:none">管理</a>
       </div>
       <div class="nav-user" id="navUser">
       </div>
     </div>
   </nav>
   <main id="app"></main>
+  ${footerHtml}
   <script>${APP_JS}</script>
 </body>
 </html>`;

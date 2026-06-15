@@ -1,6 +1,5 @@
 import { runDetection, probeSinglePath } from "../detect.js";
 import { jsonResponse, errorResponse } from "../utils.js";
-import { requireUser } from "../auth.js";
 
 export async function handle(request, env) {
   try {
@@ -8,7 +7,6 @@ export async function handle(request, env) {
     const { url, apiKey, path, model } = body;
     if (!url) return errorResponse("缺少 url 参数");
 
-    const user = await requireUser(request, env);
     let result;
     if (path) {
       result = await probeSinglePath(url.trim(), apiKey?.trim() || "", path.trim(), model?.trim() || "");

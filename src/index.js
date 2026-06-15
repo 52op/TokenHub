@@ -24,9 +24,30 @@ export default {
     // Frontend pages
     if (path === "/" || path.startsWith("/app")) {
       const user = await requireUser(request, env);
-      return new Response(renderApp(user), {
+      const settingsRows = await env.DB.prepare("SELECT key, value FROM site_settings").all();
+      const siteSettings = {};
+      for (const row of settingsRows.results || []) siteSettings[row.key] = row.value;
+      siteSettings._url = url.origin;
+      return new Response(renderApp(user, siteSettings), {
         headers: { "Content-Type": "text/html;charset=UTF-8" },
       });
+    }
+
+    // Sitemap
+    if (path === "/sitemap.xml") {
+      const host = url.origin;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${host}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
+  <url><loc>${host}/app</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+</urlset>`;
+      return new Response(xml, { headers: { "Content-Type": "application/xml" } });
+    }
+
+    // Robots.txt
+    if (path === "/robots.txt") {
+      const txt = `User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: ${url.origin}/sitemap.xml`;
+      return new Response(txt, { headers: { "Content-Type": "text/plain" } });
     }
 
     // SSO callback
@@ -108,6 +129,14 @@ export default {
     // Admin
     if (path.startsWith("/api/admin/")) {
       return adminRoute.handle(request, env, path);
+    }
+
+    // Public site settings (for SEO/meta)
+    if (path === "/api/settings" && request.method === "GET") {
+      const settings = await env.DB.prepare("SELECT key, value FROM site_settings").all();
+      const map = {};
+      for (const row of settings.results || []) map[row.key] = row.value;
+      return jsonResponse({ settings: map });
     }
 
     // Manual test

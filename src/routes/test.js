@@ -1,4 +1,3 @@
-import { requireUser } from "../auth.js";
 import { jsonResponse, errorResponse, buildHeaders, fetchWithTimeout } from "../utils.js";
 import { PROBE_PAYLOADS } from "../config.js";
 
@@ -9,9 +8,6 @@ const PROBE_PATHS = {
 };
 
 export async function handleEndpointTest(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return errorResponse("未登录", 401);
-
   const body = await request.json();
   const { url, apiKey, protocol } = body;
   if (!url || !protocol) return errorResponse("缺少 url 或 protocol 参数");
@@ -45,9 +41,6 @@ export async function handleEndpointTest(request, env) {
 }
 
 export async function handleDirectSend(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return errorResponse("未登录", 401);
-
   const body = await request.json();
   const { url, apiKey, model, message } = body;
   if (!url || !model || !message) return errorResponse("缺少参数");
@@ -88,9 +81,6 @@ export async function handleDirectSend(request, env) {
 }
 
 export async function handleModelTest(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return errorResponse("未登录", 401);
-
   const body = await request.json();
   const { url, apiKey, model, protocol } = body;
   if (!url || !model || !protocol) return errorResponse("缺少参数");
