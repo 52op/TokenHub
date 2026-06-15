@@ -2156,11 +2156,15 @@ async function sendChatMessage(endpointId, retryContent) {
 
 function renderHealthPage() {
   return '<div class="container">' +
-    '<h2 class="display-sm" style="margin-bottom:24px">健康检测历史</h2>' +
+    '<h2 class="display-sm" style="margin-bottom:24px">健康检测</h2>' +
+    '<div id="healthSummary"></div>' +
     '<div class="card">' +
-      '<div class="filters">' +
-        '<input type="number" id="healthDays" class="text-input" value="7" style="width:100px" placeholder="天数" />' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<select id="healthEndpointFilter" class="text-input" style="max-width:350px" onchange="loadHealthHistory()"><option value="">全部接口</option></select>' +
+        '<input type="number" id="healthDays" class="text-input" value="7" style="width:80px" placeholder="天数" onchange="loadHealthHistory()" />' +
+        '<span style="font-size:13px;color:var(--muted)">天</span>' +
         '<button class="btn btn-primary" onclick="loadHealthPage()">刷新</button>' +
+        '<button class="btn btn-secondary" id="checkAllBtn" onclick="checkAllEndpoints()">立即检测</button>' +
       '</div>' +
     '</div>' +
     '<div id="healthList"></div>' +
@@ -2168,20 +2172,75 @@ function renderHealthPage() {
 }
 
 async function loadHealthPage() {
-  const el = document.getElementById('healthList');
+  await loadHealthSummary();
+  await loadEndpointFilter();
+  await loadHealthHistory();
+}
+
+async function loadHealthSummary() {
+  var el = document.getElementById('healthSummary');
   if (!el) return;
-  const days = document.getElementById('healthDays')?.value || 7;
+  try {
+    var epData = await API.get('/api/endpoints?limit=100');
+    var endpoints = epData.endpoints || [];
+    var total = endpoints.length;
+    var alive = 0;
+    var totalRespTime = 0;
+    var respCount = 0;
+    var lastCheck = '';
+    for (var i = 0; i < endpoints.length; i++) {
+      var keysData = await API.get('/api/endpoints/' + endpoints[i].id + '/keys');
+      var keys = keysData.keys || [];
+      for (var j = 0; j < keys.length; j++) {
+        if (keys[j].last_status) alive++;
+        if (keys[j].last_response_time_ms) { totalRespTime += keys[j].last_response_time_ms; respCount++; }
+        if (keys[j].last_checked_at && keys[j].last_checked_at > lastCheck) lastCheck = keys[j].last_checked_at;
+      }
+    }
+    var avgResp = respCount > 0 ? Math.round(totalRespTime / respCount) : 0;
+    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:' + (alive > 0 ? 'var(--success)' : 'var(--muted)') + '">' + alive + '/' + total + '</div><div style="font-size:12px;color:var(--muted)">接口存活</div></div>' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:var(--ink)">' + (avgResp > 0 ? avgResp + 'ms' : '-') + '</div><div style="font-size:12px;color:var(--muted)">平均响应</div></div>' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:14px;font-weight:500;color:var(--ink)">' + (lastCheck ? formatTime(lastCheck) : '从未') + '</div><div style="font-size:12px;color:var(--muted)">最近检测</div></div>' +
+    '</div>';
+  } catch (e) {
+    el.innerHTML = '';
+  }
+}
+
+async function loadEndpointFilter() {
+  var sel = document.getElementById('healthEndpointFilter');
+  if (!sel) return;
+  try {
+    var data = await API.get('/api/endpoints?limit=100');
+    var endpoints = data.endpoints || [];
+    var html = '<option value="">全部接口</option>';
+    for (var i = 0; i < endpoints.length; i++) {
+      html += '<option value="' + endpoints[i].id + '">' + escapeHtml(endpoints[i].name || endpoints[i].url) + '</option>';
+    }
+    sel.innerHTML = html;
+  } catch (e) {}
+}
+
+async function loadHealthHistory() {
+  var el = document.getElementById('healthList');
+  if (!el) return;
+  var days = document.getElementById('healthDays')?.value || 7;
+  var endpointId = document.getElementById('healthEndpointFilter')?.value || '';
   el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
 
   try {
-    const data = await API.get('/api/health/history?days=' + days);
-    const checks = data.checks || [];
+    var url = '/api/health/history?days=' + days;
+    if (endpointId) url += '&endpoint_id=' + endpointId;
+    var data = await API.get(url);
+    var checks = data.checks || [];
     if (checks.length === 0) {
       el.innerHTML = '<div class="empty-state">暂无检测记录</div>';
       return;
     }
-    let html = '<div class="card"><table class="health-table"><tr><th>时间</th><th>状态</th><th>URL</th><th>状态码</th><th>响应时间</th></tr>';
-    for (const c of checks) {
+    var html = '<div class="card"><table class="health-table"><tr><th>时间</th><th>状态</th><th>URL</th><th>状态码</th><th>响应时间</th></tr>';
+    for (var i = 0; i < checks.length; i++) {
+      var c = checks[i];
       html += '<tr>' +
         '<td class="cell-time">' + formatTime(c.checked_at) + '</td>' +
         '<td><span class="dot ' + (c.is_alive ? 'dot-green' : 'dot-red') + '"></span> ' + (c.is_alive ? '存活' : '失败') + '</td>' +
@@ -2282,6 +2341,20 @@ async function loadAdminPage() {
 async function deleteUser(userId) {
   await API.del('/api/admin/users/' + userId);
   await loadAdminPage();
+}
+
+async function checkAllEndpoints() {
+  var btn = document.getElementById('checkAllBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '检测中...'; }
+  try {
+    var data = await API.post('/api/health/check-all');
+    showToast('检测完成，共 ' + (data.total || 0) + ' 个 Key');
+    await loadHealthPage();
+  } catch (e) {
+    showToast('检测失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '立即检测'; }
+  }
 }
 
 function formatTime(t) {
