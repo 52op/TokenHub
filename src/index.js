@@ -117,6 +117,9 @@ export default {
     if (path === "/api/test/model" && request.method === "POST") {
       return testRoute.handleModelTest(request, env);
     }
+    if (path === "/api/test/send" && request.method === "POST") {
+      return testRoute.handleDirectSend(request, env);
+    }
 
     // Chat
     if (path === "/api/chat" && request.method === "POST") {

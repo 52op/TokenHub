@@ -737,18 +737,20 @@ textarea.text-input {
 
 /* Page not found placeholder */
 
-/* Manual test */
-.manual-test-section { margin-top: 32px; }
-.section-divider { border: none; border-top: 1px solid var(--hairline); margin-bottom: 24px; }
+/* Test results */
 .test-result { margin-top: 12px; }
 .test-result-item { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 12px; font-size: 13px; }
+.result-item { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
 .result-status { font-weight: 600; }
 .result-status.ok { color: var(--success); }
 .result-status.err { color: var(--error); }
-.result-time { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.result-time { color: var(--muted); font-size: 12px; }
 .result-error { color: var(--error); margin-top: 4px; }
 .result-body { font-family: var(--font-mono); font-size: 11px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; color: var(--body); }
 .result-chat { font-size: 14px; margin-top: 8px; padding: 8px; background: var(--surface-card); border-radius: var(--radius-sm); line-height: 1.5; }
+.send-url { font-size: 12px; color: var(--muted); margin-bottom: 8px; word-break: break-all; }
+.btn-small-ghost { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: var(--radius-sm); font-family: var(--font-sans); }
+.btn-small-ghost:hover { background: var(--surface-strong); }
 
 /* Chat */
 .chat-section { margin-top: 32px; }
@@ -832,7 +834,6 @@ async function renderPage() {
   try {
     if (path === '/' || path === '') {
       app.innerHTML = renderDetectPage();
-      initDetectPage();
     } else if (path === '/app') {
       app.innerHTML = renderDashboard();
       await loadDashboard();
@@ -889,73 +890,35 @@ function renderDetectPage() {
   return '<div class="container">' +
     '<div class="hero-band">' +
       '<h1 class="display-lg">API 接口检测</h1>' +
-      '<p class="body-md" style="margin-top:8px">智能探测接口支持的协议和可用模型</p>' +
+      '<p class="body-md" style="margin-top:8px">输入 URL 自动检测，填写更多字段可定向测试</p>' +
     '</div>' +
     '<div class="card">' +
       '<div class="input-row">' +
         '<input type="text" id="detectUrl" class="text-input" placeholder="API URL，如 https://api.cline.bot" />' +
-        '<button class="btn btn-primary" id="detectBtn" onclick="startDetection()">检测</button>' +
       '</div>' +
       '<div class="input-row" style="margin-top:8px">' +
-        '<input type="password" id="detectKey" class="text-input" placeholder="API Key（可选，有 Key 可验证协议并检测模型）" />' +
+        '<input type="password" id="detectKey" class="text-input" placeholder="API Key（可选）" />' +
+        '<input type="text" id="detectPath" class="text-input" placeholder="自定义路径（可选）如 /v1/chat/completions" />' +
+      '</div>' +
+      '<div class="input-row" style="margin-top:8px">' +
+        '<input type="text" id="detectModel" class="text-input" placeholder="模型 ID（可选）如 gpt-4o" />' +
+        '<input type="text" id="detectMessage" class="text-input" placeholder="聊天内容（可选，填写后直接发送）" />' +
+        '<button class="btn btn-primary" id="detectBtn" onclick="startDetection()">⚡ 检测</button>' +
       '</div>' +
       '<div id="detectProgress" style="display:none;margin-top:12px;color:var(--muted);font-size:13px">' +
-        '<span class="spinner"></span> 正在检测...' +
+        '<span class="spinner"></span> 检测中...' +
       '</div>' +
     '</div>' +
     '<div id="detectResults"></div>' +
-    manualTestHTML() +
   '</div>';
-}
-
-function manualTestHTML() {
-  return '<div class="manual-test-section">' +
-    '<hr class="section-divider" />' +
-    '<h3 class="display-sm" style="margin-bottom:16px">手动测试</h3>' +
-    '<div class="card">' +
-      '<div class="card-section">' +
-        '<label class="label">路径测试</label>' +
-        '<div class="input-row">' +
-          '<input type="text" id="manualUrl" class="text-input" placeholder="Base URL，如 https://api.cline.bot/v1" />' +
-        '</div>' +
-        '<div class="input-row" style="margin-top:8px">' +
-          '<select id="manualProtocol" class="text-input" style="max-width:200px">' +
-            '<option value="openai_chat">OpenAI Chat</option>' +
-            '<option value="anthropic">Anthropic</option>' +
-            '<option value="openai_responses">OpenAI Responses</option>' +
-          '</select>' +
-          '<button class="btn btn-primary" onclick="manualPathTest()">测试</button>' +
-        '</div>' +
-        '<div id="manualPathResult" class="test-result"></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="card">' +
-      '<div class="card-section">' +
-        '<label class="label">模型测试（发送一条消息验证）</label>' +
-        '<div class="input-row">' +
-          '<input type="text" id="modelTestUrl" class="text-input" placeholder="Base URL" />' +
-          '<input type="password" id="modelTestKey" class="text-input" placeholder="API Key（可选）" />' +
-        '</div>' +
-        '<div class="input-row" style="margin-top:8px">' +
-          '<input type="text" id="modelTestId" class="text-input" placeholder="模型 ID，如 gpt-4o" />' +
-          '<select id="modelTestProtocol" class="text-input" style="max-width:200px">' +
-            '<option value="openai_chat">OpenAI Chat</option>' +
-            '<option value="anthropic">Anthropic</option>' +
-          '</select>' +
-          '<button class="btn btn-primary" onclick="manualModelTest()">测试</button>' +
-        '</div>' +
-        '<div id="modelTestResult" class="test-result"></div>' +
-      '</div>' +
-    '</div>' +
-  '</div>';
-}
-
-function initDetectPage() {
 }
 
 async function startDetection() {
   const url = document.getElementById('detectUrl').value.trim();
   const key = document.getElementById('detectKey').value.trim();
+  const path = document.getElementById('detectPath').value.trim();
+  const model = document.getElementById('detectModel').value.trim();
+  const message = document.getElementById('detectMessage').value.trim();
   if (!url) return alert('请输入 API URL');
 
   const btn = document.getElementById('detectBtn');
@@ -966,8 +929,14 @@ async function startDetection() {
   results.innerHTML = '';
 
   try {
-    const data = await API.post('/api/detect', { url, apiKey: key });
-    renderDetectResults(data, url, key);
+    if (message && model) {
+      const targetUrl = path ? (url.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path)) : url;
+      const data = await API.post('/api/test/send', { url: targetUrl, apiKey: key, model, message });
+      results.innerHTML = renderSendResult(data, url, key, path, model, message);
+    } else {
+      const data = await API.post('/api/detect', { url, apiKey: key, path: path || undefined, model: model || undefined });
+      results.innerHTML = renderDetectResults(data, url, key, path);
+    }
   } catch (e) {
     results.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
   } finally {
@@ -976,103 +945,203 @@ async function startDetection() {
   }
 }
 
-function renderDetectResults(data, url, apiKey) {
-  const el = document.getElementById('detectResults');
+function renderDetectResults(data, url, apiKey, customPath) {
   if (!data.success) {
-    el.innerHTML = '<div class="error-panel"><strong>检测失败</strong><br>' + escapeHtml(data.error || '无法发现有效端点') + '</div>';
-    return;
+    return '<div class="card"><div class="error-panel"><strong>检测失败</strong><br>' + escapeHtml(data.error || '无法发现有效端点') + '</div></div>';
   }
 
+  const isProbe = data.mode === 'probe';
   let html = '';
+
   if (data.recommendedBase) {
-    html += '<div class="best-base"><div class="caption-uppercase">推荐 Base URL</div><div class="best-base-url">' + escapeHtml(data.recommendedBase) + '</div></div>';
+    html += '<div class="best-base"><div class="caption-uppercase">' + (isProbe ? '探测 URL' : '推荐 Base URL') + '</div>' +
+      '<div class="best-base-url">' + escapeHtml(data.recommendedBase) + '</div></div>';
   }
 
   for (const b of (data.allBases || [])) {
-    html += '<div class="card"><div class="proto-base-url" style="font-size:13px;color:var(--muted);margin-bottom:12px">' + escapeHtml(b.base) + '</div>' +
+    html += '<div class="card">';
+    if (isProbe && b.modelVerified) {
+      html += '<div style="margin-bottom:12px;font-size:13px;color:' + (b.modelVerified.ok ? 'var(--success)' : 'var(--error)') + '">模型验证: HTTP ' + b.modelVerified.status + (b.modelVerified.ok ? ' ✓' : ' ✗') + '</div>';
+    }
+
+    // Protocol badges
+    const protoKeys = Object.keys(b.protocols).filter(function(k) { return b.protocols[k].supported; });
+    html += '<div class="caption-uppercase" style="margin-bottom:12px">协议 ' +
+      (protoKeys.length > 0 ? '<span style="font-weight:400;color:var(--muted)">点击 [测试] 验证连通性</span>' : '<span style="font-weight:400;color:var(--muted)">未检测到支持的协议</span>') +
+      '</div>' +
       '<div class="protocol-grid">';
-    for (const [key, info] of Object.entries(b.protocols)) {
-      const labels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
-      const label = labels[key] || key;
-      const dotClass = info.supported ? 'dot-green' : 'dot-red';
-      const badgeClass = info.supported ? 'badge-green' : 'badge-red';
-      const badgeText = info.supported ? 'YES' : 'NO';
-      html += '<div class="proto-card ' + (info.supported ? 'ok' : 'no') + '">' +
-        '<div class="proto-name">' + label + ' <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
-        '<div class="proto-status"><span class="dot ' + dotClass + '"></span>' + (info.status ? 'HTTP ' + info.status : '') + '</div>' +
-        (info.supported && info.url ? '<div class="proto-url">' + escapeHtml(info.url) + '</div>' : '') +
+
+    const protoLabels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
+
+    for (const [pk, info] of Object.entries(b.protocols)) {
+      const label = protoLabels[pk] || pk;
+      const supported = info.supported;
+      const statusText = info.status ? 'HTTP ' + info.status : '';
+      const timeText = info.responseTime ? info.responseTime + 'ms' : '';
+
+      html += '<div class="proto-card ' + (supported ? 'ok' : 'no') + '">' +
+        '<div class="proto-name">' + label +
+          ' <span class="badge ' + (supported ? 'badge-green' : 'badge-red') + '">' + (supported ? '✓' : '✗') + '</span>' +
+        '</div>' +
+        '<div class="proto-status">' + statusText + (timeText ? ' · ' + timeText : '') + '</div>' +
+        (info.url ? '<div class="proto-url">' + escapeHtml(info.url) + '</div>' : '') +
+        (supported ? '<button class="btn btn-small" style="margin-top:6px" onclick="quickTestProtocol(\\'' + escapeHtml(b.base) + '\\',\\'' + pk + '\\',\\'' + escapeHtml(apiKey) + '\\')">测试</button>' : '') +
       '</div>';
     }
     html += '</div>';
 
+    // Quick send row
+    html += '<div class="quick-test" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)">' +
+      '<div class="input-row" style="gap:6px">' +
+        '<select id="quickProto" class="text-input" style="max-width:160px">' +
+          protoKeys.map(function(pk) {
+            return '<option value="' + pk + '">' + (protoLabels[pk] || pk) + '</option>';
+          }).join('') +
+        '</select>' +
+        '<input type="text" id="quickModel" class="text-input" placeholder="模型 ID" style="max-width:180px" />' +
+        '<input type="text" id="quickMsg" class="text-input" placeholder="输入消息" />' +
+        '<button class="btn btn-primary btn-small" onclick="quickSend(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\')">发送</button>' +
+      '</div>' +
+      '<div id="quickResult" class="test-result"></div>' +
+    '</div>';
+
+    // Models
     if (b.models && b.models.models && b.models.models.length > 0) {
-      html += '<div class="models-wrap">' +
-        '<div class="caption-uppercase" style="margin-bottom:8px">模型 (' + b.models.models.length + ')</div>' +
+      html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)">' +
+        '<div class="caption-uppercase" style="margin-bottom:8px">模型 (' + b.models.models.length + ')' +
+        ' <span style="font-weight:400;color:var(--muted)">点击 [验证] 测试可用性</span>' +
+        '</div>' +
         '<div class="models-grid">';
       for (const m of b.models.models) {
-        html += '<span class="model-chip ' + (m.supported !== false ? 'available' : '') + '">' + escapeHtml(m.id || m) + '</span>';
+        const mid = typeof m === 'string' ? m : (m.id || '');
+        html += '<div class="model-chip ' + (m.supported !== false ? 'available' : '') + '">' +
+          escapeHtml(mid) +
+          ' <button class="btn-small-ghost" onclick="quickVerifyModel(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(mid) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
+        '</div>';
       }
       html += '</div></div>';
     }
+
     html += '</div>';
   }
 
+  // Save
   html += '<div class="card" style="text-align:center">' +
-    '<button class="btn btn-primary" onclick="saveEndpoint()">保存此接口</button>' +
+    '<div class="input-row" style="justify-content:center">' +
+      '<input type="text" id="saveEpName" class="text-input" placeholder="接口名称" style="max-width:300px" value="' + escapeHtml(url) + '" />' +
+      '<button class="btn btn-primary" onclick="saveEndpoint()">保存到我的接口</button>' +
+    '</div>' +
   '</div>';
 
-  el.innerHTML = html;
+  return html;
+}
+
+function renderSendResult(data, url, apiKey, path, model, message) {
+  const fullUrl = path ? (url.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path)) : url;
+  let html = '<div class="card">' +
+    '<div class="caption-uppercase" style="margin-bottom:12px">发送结果</div>' +
+    '<div class="result-item">' +
+      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + (data.status || '-') + '</div>' +
+      '<div class="result-time">' + (data.responseTime > 0 ? data.responseTime + 'ms' : '') + '</div>' +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">' + escapeHtml(fullUrl) + ' | 模型: ' + escapeHtml(model) + '</div>';
+
+  if (data.reply) {
+    html += '<div class="result-chat">' + escapeHtml(data.reply) + '</div>';
+  }
+  if (data.error) {
+    html += '<div class="result-error">' + escapeHtml(data.error) + '</div>';
+  }
+  if (data.raw) {
+    html += '<details style="margin-top:8px"><summary style="font-size:12px;color:var(--muted);cursor:pointer">原始响应</summary>' +
+      '<pre class="result-body">' + escapeHtml(data.raw) + '</pre></details>';
+  }
+  html += '</div>';
+
+  // Retry card
+  html += '<div class="card">' +
+    '<div class="input-row" style="gap:6px">' +
+      '<input type="text" id="retryModel" class="text-input" placeholder="模型 ID" style="max-width:200px" value="' + escapeHtml(model) + '" />' +
+      '<input type="text" id="retryMsg" class="text-input" placeholder="输入消息" value="' + escapeHtml(message) + '" />' +
+      '<button class="btn btn-primary btn-small" onclick="retrySend(\\'' + escapeHtml(fullUrl) + '\\',\\'' + escapeHtml(apiKey) + '\\')">重发</button>' +
+    '</div>' +
+    '<div id="retryResult" class="test-result"></div>' +
+  '</div>';
+
+  return html;
 }
 
 async function saveEndpoint() {
   const url = document.getElementById('detectUrl').value.trim();
   if (!url) return alert('缺少 URL');
-  await API.post('/api/endpoints', { url: url, name: url, protocols: '{}', models: '[]' });
+  const name = document.getElementById('saveEpName')?.value.trim() || url;
+  await API.post('/api/endpoints', { url, name, protocols: '{}', models: '[]' });
   alert('保存成功！');
   navigate('/app');
 }
 
-/* Manual test */
-async function manualPathTest() {
-  const url = document.getElementById('manualUrl').value.trim();
-  const protocol = document.getElementById('manualProtocol').value;
-  const el = document.getElementById('manualPathResult');
-  if (!url) return alert('请输入 URL');
+/* Inline test helpers */
+async function quickTestProtocol(baseUrl, protocol, apiKey) {
+  const el = document.getElementById('quickResult');
   el.innerHTML = '<span class="spinner"></span> 测试中...';
   try {
-    const data = await API.post('/api/test/endpoint', { url, protocol, apiKey: '' });
+    const data = await API.post('/api/test/endpoint', { url: baseUrl, protocol, apiKey });
     el.innerHTML = '<div class="test-result-item">' +
       '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + data.status + '</div>' +
       '<div class="result-time">' + data.responseTime + 'ms</div>' +
       (data.error ? '<div class="result-error">' + escapeHtml(data.error) + '</div>' : '') +
-      (data.body ? '<pre class="result-body">' + escapeHtml(data.body) + '</pre>' : '') +
+      (data.body ? '<pre class="result-body">' + escapeHtml(data.body.substring(0, 300)) + '</pre>' : '') +
     '</div>';
   } catch (e) {
     el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
   }
 }
 
-async function manualModelTest() {
-  const url = document.getElementById('modelTestUrl').value.trim();
-  const apiKey = document.getElementById('modelTestKey').value.trim();
-  const model = document.getElementById('modelTestId').value.trim();
-  const protocol = document.getElementById('modelTestProtocol').value;
-  const el = document.getElementById('modelTestResult');
-  if (!url || !model) return alert('请输入 URL 和模型 ID');
-  el.innerHTML = '<span class="spinner"></span> 测试中...';
+async function quickSend(baseUrl, apiKey) {
+  const model = document.getElementById('quickModel').value.trim();
+  const msg = document.getElementById('quickMsg').value.trim();
+  const protocol = document.getElementById('quickProto').value;
+  if (!model || !msg) return alert('请输入模型 ID 和消息');
+  const pathMap = { openai_chat: '/chat/completions', openai_responses: '/responses', anthropic: '/messages' };
+  const fullUrl = baseUrl.replace(/\/+$/, '') + (pathMap[protocol] || '/chat/completions');
+  const el = document.getElementById('quickResult');
+  el.innerHTML = '<span class="spinner"></span> 发送中...';
   try {
-    const data = await API.post('/api/test/model', { url, apiKey, model, protocol });
-    let html = '<div class="test-result-item">' +
-      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + data.status + '</div>' +
-      '<div class="result-time">' + data.responseTime + 'ms</div>';
-    if (data.error) html += '<div class="result-error">' + escapeHtml(data.error) + '</div>';
-    if (data.parsed) {
-      const content = (data.parsed.choices && data.parsed.choices[0] && data.parsed.choices[0].message && data.parsed.choices[0].message.content) ||
-        (data.parsed.content && data.parsed.content[0] && data.parsed.content[0].text) || '';
-      if (content) html += '<div class="result-chat">' + escapeHtml(content.substring(0, 500)) + '</div>';
-    }
-    html += '</div>';
-    el.innerHTML = html;
+    const data = await API.post('/api/test/send', { url: fullUrl, apiKey, model, message: msg });
+    el.innerHTML = '<div class="test-result-item">' +
+      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + (data.status || '-') + '</div>' +
+      '<div class="result-time">' + (data.responseTime > 0 ? data.responseTime + 'ms' : '') + '</div>' +
+      (data.reply ? '<div class="result-chat">' + escapeHtml(data.reply) + '</div>' : '') +
+      (data.error ? '<div class="result-error">' + escapeHtml(data.error) + '</div>' : '') +
+    '</div>';
+  } catch (e) {
+    el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function quickVerifyModel(baseUrl, model, apiKey) {
+  try {
+    const data = await API.post('/api/test/model', { url: baseUrl, apiKey, model, protocol: 'openai_chat' });
+    alert('模型 ' + model + ': HTTP ' + data.status + (data.ok ? ' ✓' : ' ✗'));
+  } catch (e) {
+    alert('验证失败: ' + e.message);
+  }
+}
+
+async function retrySend(url, apiKey) {
+  const model = document.getElementById('retryModel').value.trim();
+  const msg = document.getElementById('retryMsg').value.trim();
+  if (!model || !msg) return alert('请输入模型 ID 和消息');
+  const el = document.getElementById('retryResult');
+  el.innerHTML = '<span class="spinner"></span> 发送中...';
+  try {
+    const data = await API.post('/api/test/send', { url, apiKey, model, message: msg });
+    el.innerHTML = '<div class="test-result-item">' +
+      '<div class="result-status ' + (data.ok ? 'ok' : 'err') + '">HTTP ' + (data.status || '-') + '</div>' +
+      '<div class="result-time">' + (data.responseTime > 0 ? data.responseTime + 'ms' : '') + '</div>' +
+      (data.reply ? '<div class="result-chat">' + escapeHtml(data.reply) + '</div>' : '') +
+      (data.error ? '<div class="result-error">' + escapeHtml(data.error) + '</div>' : '') +
+    '</div>';
   } catch (e) {
     el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
   }

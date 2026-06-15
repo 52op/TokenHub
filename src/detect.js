@@ -153,6 +153,53 @@ export async function detectModels(base, apiKey, protocols) {
   return result;
 }
 
+export async function probeSinglePath(inputUrl, apiKey, customPath, modelId) {
+  const base = normalizeUrl(inputUrl);
+  const path = customPath.startsWith("/") ? customPath : "/" + customPath;
+  const fullUrl = base.replace(/\/+$/, "") + path;
+
+  let protocol = "openai_chat";
+  if (path.includes("/messages")) protocol = "anthropic";
+  else if (path.includes("/responses")) protocol = "openai_responses";
+
+  const headers = buildHeaders(apiKey || "", protocol === "anthropic" ? "anthropic" : "openai");
+
+  const start = Date.now();
+  try {
+    const probePayload = PROBE_PAYLOADS[protocol] || { model: "gpt-4o-mini", messages: [{ role: "user", content: "hi" }], max_tokens: 1 };
+    const resp = await fetchWithTimeout(fullUrl, { method: "POST", headers, body: JSON.stringify(probePayload) }, 10000);
+    const bodyText = await resp.text();
+    const responseTime = Date.now() - start;
+    const ok = resp.ok || resp.status === 405 || resp.status === 400;
+
+    const protocolInfo = {};
+    protocolInfo[protocol] = { supported: ok, url: fullUrl, status: resp.status, responseTime, error: null };
+
+    let models = null;
+    if (ok) models = await detectModels(base, apiKey || "", protocolInfo);
+
+    let modelVerified = null;
+    if (modelId && ok) {
+      const verifyPayload = protocol === "anthropic"
+        ? { model: modelId, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }
+        : { model: modelId, messages: [{ role: "user", content: "hi" }], max_tokens: 1, stream: false };
+      try {
+        const vresp = await fetchWithTimeout(fullUrl, { method: "POST", headers, body: JSON.stringify(verifyPayload) }, 10000);
+        modelVerified = { status: vresp.status, ok: vresp.ok || vresp.status === 400 };
+      } catch {}
+    }
+
+    return {
+      success: ok,
+      mode: "probe",
+      recommendedBase: base,
+      allBases: [{ base, status: resp.status, protocols: protocolInfo, models, modelVerified }],
+    };
+  } catch (e) {
+    return { success: false, mode: "probe", error: e.message || "连接失败", allBases: [] };
+  }
+}
+
 export async function runDetection(inputUrl, apiKey) {
   const discovered = await discoverBaseUrls(inputUrl, apiKey);
 

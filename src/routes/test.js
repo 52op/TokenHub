@@ -44,6 +44,48 @@ export async function handleEndpointTest(request, env) {
   }
 }
 
+export async function handleDirectSend(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return errorResponse("未登录", 401);
+
+  const body = await request.json();
+  const { url, apiKey, model, message } = body;
+  if (!url || !model || !message) return errorResponse("缺少参数");
+
+  let headers, payload;
+  if (url.includes("/messages")) {
+    headers = buildHeaders(apiKey || "", "anthropic");
+    payload = { model, max_tokens: 4096, messages: [{ role: "user", content: message }] };
+  } else {
+    headers = buildHeaders(apiKey || "", "openai");
+    payload = { model, messages: [{ role: "user", content: message }], max_tokens: 4096 };
+  }
+
+  try {
+    const start = Date.now();
+    const resp = await fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(payload) }, 30000);
+    const bodyText = await resp.text();
+    const responseTime = Date.now() - start;
+
+    let reply = "";
+    let parsed;
+    try { parsed = JSON.parse(bodyText); } catch {}
+
+    if (parsed) {
+      if (url.includes("/messages")) {
+        reply = (parsed.content || []).map(function(c) { return c.text || ""; }).join("");
+      } else {
+        const choice = (parsed.choices || [])[0];
+        if (choice) reply = choice.message?.content || choice.delta?.content || "";
+      }
+    }
+
+    return jsonResponse({ status: resp.status, responseTime, ok: resp.ok, reply, raw: bodyText.substring(0, 1000) });
+  } catch (e) {
+    return jsonResponse({ status: 0, responseTime: -1, error: e.message || "连接失败" });
+  }
+}
+
 export async function handleModelTest(request, env) {
   const user = await requireUser(request, env);
   if (!user) return errorResponse("未登录", 401);
