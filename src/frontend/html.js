@@ -867,6 +867,7 @@ textarea.text-input {
 const APP_JS = `
 const TOKEN_KEY = 'tokenhub_token';
 let detectedBaseUrl = '';
+let detectedData = null;
 const LS_FORM = 'tokenhub_detect_form';
 const LS_KEYS = 'tokenhub_saved_keys';
 
@@ -1318,8 +1319,13 @@ function renderDetectPage() {
         '<button class="btn btn-secondary" id="resetBtn" onclick="handleReset()" style="display:none">↺ 重置</button>' +
       '</div>' +
       '<div id="keyTooltip" class="key-tooltip" style="display:none"></div>' +
-      '<div id="detectProgress" style="display:none;margin-top:12px;color:var(--muted);font-size:13px">' +
-        '<span class="spinner"></span> 检测中...' +
+      '<div id="detectProgress" style="display:none;margin-top:12px">' +
+        '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">' +
+          '<span class="spinner"></span> 正在探测多个路径...' +
+        '</div>' +
+        '<div style="margin-top:8px;background:var(--hairline);border-radius:4px;height:4px;overflow:hidden">' +
+          '<div id="progressBar" style="height:100%;background:var(--primary);border-radius:4px;width:0%;transition:width 0.3s"></div>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     '<div id="detectResults"></div>' +
@@ -1336,10 +1342,17 @@ async function startDetection() {
 
   const btn = document.getElementById('detectBtn');
   const progress = document.getElementById('detectProgress');
+  const progressBar = document.getElementById('progressBar');
   const results = document.getElementById('detectResults');
   btn.disabled = true;
-  progress.style.display = 'flex';
+  progress.style.display = '';
   results.innerHTML = '';
+
+  var progressVal = 0;
+  var progressTimer = setInterval(function() {
+    progressVal = Math.min(progressVal + Math.random() * 15, 90);
+    if (progressBar) progressBar.style.width = progressVal + '%';
+  }, 500);
 
   try {
     if (message && model) {
@@ -1350,13 +1363,16 @@ async function startDetection() {
     } else {
       const data = await API.post('/api/detect', { url, apiKey: key, path: path || undefined, model: model || undefined });
       detectedBaseUrl = data.recommendedBase || url;
+      detectedData = data;
       results.innerHTML = renderDetectResults(data, url, key, path);
     }
+    if (progressBar) progressBar.style.width = '100%';
   } catch (e) {
     results.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
   } finally {
+    clearInterval(progressTimer);
+    setTimeout(function() { progress.style.display = 'none'; if (progressBar) progressBar.style.width = '0%'; }, 300);
     btn.disabled = false;
-    progress.style.display = 'none';
   }
 }
 
@@ -1367,6 +1383,34 @@ function renderDetectResults(data, url, apiKey, customPath) {
 
   const isProbe = data.mode === 'probe';
   let html = '';
+
+  // Collect detected protocols and models
+  var detectedProtos = {};
+  var detectedModels = [];
+  for (const b of (data.allBases || [])) {
+    for (const [pk, info] of Object.entries(b.protocols)) {
+      if (info.supported) detectedProtos[pk] = true;
+    }
+    if (b.models && b.models.models) {
+      for (const m of b.models.models) {
+        var mid = typeof m === 'string' ? m : (m.id || '');
+        if (mid && !detectedModels.includes(mid)) detectedModels.push(mid);
+      }
+    }
+  }
+
+  // Save section at top
+  html += '<div class="card" style="background:var(--canvas-soft)">' +
+    '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+      '<span style="font-weight:600;font-size:15px">保存到我的接口</span>' +
+      '<input type="text" id="saveEpName" class="text-input" placeholder="接口名称" style="max-width:300px;flex:1" value="' + escapeHtml(url) + '" />' +
+      '<button class="btn btn-primary" onclick="saveEndpoint()">保存</button>' +
+    '</div>' +
+    '<div style="margin-top:8px;font-size:12px;color:var(--muted)">' +
+      (Object.keys(detectedProtos).length > 0 ? '协议: ' + Object.keys(detectedProtos).map(function(k) { return { openai_chat: 'Chat', openai_responses: 'Responses', anthropic: 'Anthropic' }[k] || k; }).join(', ') : '') +
+      (detectedModels.length > 0 ? ' · 模型: ' + detectedModels.slice(0, 3).join(', ') + (detectedModels.length > 3 ? ' +' + (detectedModels.length - 3) : '') : '') +
+    '</div>' +
+  '</div>';
 
   if (data.recommendedBase) {
     html += '<div class="best-base"><div class="caption-uppercase">' + (isProbe ? '探测 URL' : '推荐 Base URL') + '</div>' +
@@ -1440,14 +1484,6 @@ function renderDetectResults(data, url, apiKey, customPath) {
     html += '</div>';
   }
 
-  // Save
-  html += '<div class="card" style="text-align:center">' +
-    '<div class="input-row" style="justify-content:center">' +
-      '<input type="text" id="saveEpName" class="text-input" placeholder="接口名称" style="max-width:300px" value="' + escapeHtml(url) + '" />' +
-      '<button class="btn btn-primary" onclick="saveEndpoint()">保存到我的接口</button>' +
-    '</div>' +
-  '</div>';
-
   return html;
 }
 
@@ -1494,9 +1530,30 @@ async function saveEndpoint() {
   const saveUrl = detectedBaseUrl || url;
   const model = document.getElementById('detectModel')?.value.trim() || '';
   const pending = getPendingModels(url);
-  const allModels = model ? [...new Set([model, ...pending])] : pending;
-  await API.post('/api/endpoints', { url: saveUrl, name, protocols: {}, models: allModels });
+
+  // Collect from detection results
+  var detProtos = {};
+  var detModels = [];
+  if (detectedData && detectedData.allBases) {
+    for (const b of detectedData.allBases) {
+      for (const [pk, info] of Object.entries(b.protocols || {})) {
+        if (info.supported) detProtos[pk] = true;
+      }
+      if (b.models && b.models.models) {
+        for (const m of b.models.models) {
+          var mid = typeof m === 'string' ? m : (m.id || '');
+          if (mid && !detModels.includes(mid)) detModels.push(mid);
+        }
+      }
+    }
+  }
+
+  var allModels = model ? [model, ...detModels, ...pending] : [...detModels, ...pending];
+  allModels = [...new Set(allModels)];
+
+  await API.post('/api/endpoints', { url: saveUrl, name, protocols: detProtos, models: allModels });
   clearPendingModels(url);
+  detectedData = null;
   showToast('保存成功！');
   navigate('/app');
 }
