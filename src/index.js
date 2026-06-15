@@ -10,6 +10,7 @@ import * as adminRoute from "./routes/admin.js";
 import * as userRoute from "./routes/user.js";
 import * as testRoute from "./routes/test.js";
 import * as chatRoute from "./routes/chat.js";
+import * as importRoute from "./routes/import.js";
 import { renderApp, renderSSOCallback } from "./frontend/html.js";
 
 export default {
@@ -153,6 +154,14 @@ export default {
     // Chat
     if (path === "/api/chat" && request.method === "POST") {
       return chatRoute.handleChat(request, env);
+    }
+
+    // Import
+    if (path === "/api/import/parse" && request.method === "POST") {
+      return importRoute.handleParse(request, env);
+    }
+    if (path === "/api/import" && request.method === "POST") {
+      return importRoute.handleImport(request, env);
     }
 
     return new Response("Not Found", { status: 404 });

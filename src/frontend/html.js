@@ -1649,10 +1649,12 @@ function renderDashboard() {
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
       '<h2 class="display-sm">我的接口</h2>' +
       '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-secondary" onclick="showImportDialog()">导入</button>' +
         '<button class="btn btn-secondary" id="batchModeBtn" onclick="toggleBatchMode()">批量删除</button>' +
         '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
       '</div>' +
     '</div>' +
+    '<div id="importArea" style="display:none;margin-bottom:16px"></div>' +
     '<div id="batchBar" style="display:none;margin-bottom:12px;padding:10px 16px;background:var(--canvas-soft);border-radius:var(--radius-md);font-size:13px;color:var(--body)">' +
       '<label class="toggle" style="margin-right:12px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /> <span>全选</span></label>' +
       '<button class="btn btn-small" style="color:var(--error);border-color:var(--error)" onclick="batchDeleteEndpoints()">删除选中</button>' +
@@ -1745,6 +1747,100 @@ async function loadDashboard() {
     }
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+var importParsedItems = [];
+
+function showImportDialog() {
+  var area = document.getElementById('importArea');
+  if (!area) return;
+  area.style.display = area.style.display === 'none' ? '' : 'none';
+  if (area.style.display === 'none') return;
+  area.innerHTML = '<div class="card">' +
+    '<div class="caption-uppercase" style="margin-bottom:12px">导入接口</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">支持 9router 备份文件（JSON），自动解析 providerConnections 中的接口和 Key。</p>' +
+    '<div class="input-row">' +
+      '<input type="file" id="importFile" accept=".json" onchange="handleImportFile(this)" style="font-size:13px" />' +
+    '</div>' +
+    '<div id="importPreview"></div>' +
+  '</div>';
+}
+
+function handleImportFile(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      var json = JSON.parse(e.target.result);
+      var connections = json.providerConnections || [];
+      if (connections.length === 0) {
+        showToast('未找到 providerConnections 数据', 'error');
+        return;
+      }
+      var data = await API.post('/api/import/parse', { connections: connections });
+      importParsedItems = data.items || [];
+      renderImportPreview(importParsedItems);
+    } catch (err) {
+      showToast('解析失败: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview(items) {
+  var el = document.getElementById('importPreview');
+  if (!el) return;
+  if (items.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;margin-top:12px">没有可导入的接口</div>';
+    return;
+  }
+  var protoLabels = { openai_chat: 'Chat', openai_responses: 'Responses', anthropic: 'Anthropic' };
+  var html = '<div style="margin-top:12px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+      '<label class="toggle"><input type="checkbox" id="importSelectAll" onchange="toggleImportSelectAll()" checked /> <span>全选 (' + items.length + ')</span></label>' +
+      '<button class="btn btn-primary btn-small" onclick="executeImport()">导入选中</button>' +
+    '</div>' +
+    '<div style="max-height:400px;overflow-y:auto">' +
+    '<table class="health-table"><tr><th style="width:30px">选</th><th>名称</th><th>URL</th><th>协议</th><th>Key</th><th>状态</th></tr>';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    html += '<tr>' +
+      '<td><input type="checkbox" class="import-cb" data-index="' + i + '" checked /></td>' +
+      '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(it.name) + '</td>' +
+      '<td class="cell-url" style="max-width:250px">' + escapeHtml(it.url) + '</td>' +
+      '<td><span class="badge badge-green">' + (protoLabels[it.protocol] || it.protocol) + '</span></td>' +
+      '<td style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(it.keyValue.substring(0, 8)) + '...</td>' +
+      '<td><span class="dot ' + (it.testStatus === 'active' ? 'dot-green' : 'dot-gray') + '"></span></td>' +
+    '</tr>';
+  }
+  html += '</table></div></div>';
+  el.innerHTML = html;
+}
+
+function toggleImportSelectAll() {
+  var checked = document.getElementById('importSelectAll')?.checked;
+  document.querySelectorAll('.import-cb').forEach(function(cb) { cb.checked = checked; });
+}
+
+async function executeImport() {
+  var cbs = document.querySelectorAll('.import-cb:checked');
+  if (cbs.length === 0) return showToast('请先选择要导入的接口', 'info');
+  var items = [];
+  cbs.forEach(function(cb) {
+    var idx = parseInt(cb.dataset.index);
+    if (importParsedItems[idx]) items.push(importParsedItems[idx]);
+  });
+  try {
+    var result = await API.post('/api/import', { items: items });
+    showToast('导入完成: ' + result.imported + ' 个接口' + (result.skipped > 0 ? '，跳过 ' + result.skipped : ''));
+    importParsedItems = [];
+    var area = document.getElementById('importArea');
+    if (area) area.style.display = 'none';
+    await loadDashboard();
+  } catch (e) {
+    showToast('导入失败: ' + e.message, 'error');
   }
 }
 
