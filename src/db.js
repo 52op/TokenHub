@@ -37,14 +37,14 @@ export async function getEndpoint(env, id, userId) {
 
 export async function createEndpoint(env, userId, data) {
   const { name, url, source_url, protocols, models, notes } = data;
-  const result = await env.DB.prepare(
+  await env.DB.prepare(
     `INSERT INTO endpoints (user_id, name, url, source_url, protocols, models, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(userId, name || "", url, source_url || "", JSON.stringify(protocols || {}),
     JSON.stringify(models || []), notes || "").run();
   return env.DB.prepare(
-    "SELECT * FROM endpoints WHERE id = ?"
-  ).bind(result.meta.last_row_id).first();
+    "SELECT * FROM endpoints WHERE user_id = ? AND url = ? ORDER BY id DESC LIMIT 1"
+  ).bind(userId, url).first();
 }
 
 export async function updateEndpoint(env, id, userId, data) {
@@ -98,12 +98,12 @@ export async function getKeyById(env, id, userId) {
 }
 
 export async function createKey(env, userId, endpointId, keyValue, alias) {
-  const result = await env.DB.prepare(
+  await env.DB.prepare(
     "INSERT INTO api_keys (endpoint_id, user_id, key_value, alias) VALUES (?, ?, ?, ?)"
   ).bind(endpointId, userId, keyValue, alias || "").run();
   return env.DB.prepare(
-    "SELECT id, endpoint_id, alias, SUBSTR(key_value, 1, 3) || '...' || SUBSTR(key_value, -4) as key_masked, created_at FROM api_keys WHERE id = ?"
-  ).bind(result.meta.last_row_id).first();
+    "SELECT id, endpoint_id, alias, SUBSTR(key_value, 1, 3) || '...' || SUBSTR(key_value, -4) as key_masked, created_at FROM api_keys WHERE endpoint_id = ? AND key_value = ? ORDER BY id DESC LIMIT 1"
+  ).bind(endpointId, keyValue).first();
 }
 
 export async function updateKey(env, id, userId, data) {

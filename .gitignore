@@ -5,3 +5,8 @@ node_modules/
 docs/
 .claude/
 DESIGN-*.md
+
+.*.token
+*.txt
+response.html
+migration_*.sql

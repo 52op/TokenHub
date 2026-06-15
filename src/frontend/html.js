@@ -207,6 +207,35 @@ main {
   margin-bottom: 16px;
 }
 
+.key-tooltip {
+  position: fixed; z-index: 200;
+  background: var(--surface-card);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  font-size: 13px;
+  min-width: 260px;
+}
+.key-tooltip .btn-row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.key-dropdown {
+  position: fixed; z-index: 200;
+  background: var(--surface-card);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  min-width: 260px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.key-dropdown-item {
+  padding: 8px 12px; cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid var(--hairline);
+}
+.key-dropdown-item:hover { background: var(--surface-strong); }
+.key-dropdown-item .label { font-weight: 500; }
+.key-dropdown-item .sub { color: var(--muted); font-size: 11px; }
+
 .card-section {
   margin-bottom: 16px;
 }
@@ -793,11 +822,294 @@ textarea.text-input {
   .nav-inner { gap: 12px; padding: 0 12px; }
   .container { padding: 0 12px; }
 }
+.toast-container {
+  position: fixed; top: 16px; right: 16px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto; padding: 10px 16px; border-radius: var(--radius-sm);
+  font-size: 14px; line-height: 1.4; max-width: 360px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  animation: toastIn 0.25s ease, toastOut 0.3s ease 2.7s forwards;
+  display: flex; align-items: center; gap: 8px;
+}
+.toast-success { background: #16a34a; color: #fff; }
+.toast-error { background: #dc2626; color: #fff; }
+.toast-info { background: #2563eb; color: #fff; }
+.toast-close { cursor: pointer; opacity: 0.8; margin-left: auto; font-size: 16px; line-height: 1; }
+.toast-close:hover { opacity: 1; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(30px); } }
 `;
 
 const APP_JS = `
 const TOKEN_KEY = 'tokenhub_token';
 let detectedBaseUrl = '';
+const LS_FORM = 'tokenhub_detect_form';
+const LS_KEYS = 'tokenhub_saved_keys';
+
+function showToast(msg, type) {
+  type = type || 'success';
+  var container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.innerHTML = '<span>' + msg + '</span><span class="toast-close" onclick="this.parentElement.remove()">&times;</span>';
+  container.appendChild(el);
+  setTimeout(function() { if (el.parentElement) el.remove(); }, 3000);
+}
+
+function saveDetectForm() {
+  const fields = ['detectUrl','detectKey','detectPath','detectModel','detectMessage'];
+  const form = {};
+  for (const id of fields) {
+    const el = document.getElementById(id);
+    form[id] = el ? el.value : '';
+  }
+  try { localStorage.setItem(LS_FORM, JSON.stringify(form)); } catch (e) {}
+  var resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) resetBtn.style.display = (form.detectUrl || form.detectKey || form.detectPath || form.detectModel || form.detectMessage) ? '' : 'none';
+}
+
+function restoreDetectForm() {
+  try {
+    const raw = localStorage.getItem(LS_FORM);
+    if (!raw) return;
+    const form = JSON.parse(raw);
+    for (const id of Object.keys(form)) {
+      const el = document.getElementById(id);
+      if (el) el.value = form[id] || '';
+    }
+  } catch (e) {}
+  var resetBtn = document.getElementById('resetBtn');
+  if (resetBtn && (document.getElementById('detectUrl')?.value || document.getElementById('detectKey')?.value)) resetBtn.style.display = '';
+}
+
+function clearLocalData() {
+  try { localStorage.removeItem(LS_FORM); localStorage.removeItem(LS_KEYS); } catch (e) {}
+}
+
+function handleReset() {
+  if (!confirm('确定清空所有本地保存内容？')) return;
+  clearLocalData();
+  for (const id of ['detectUrl','detectKey','detectPath','detectModel','detectMessage']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  var resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) resetBtn.style.display = 'none';
+  clearKeyEditIcon();
+}
+
+/* Key marking */
+function getSavedKeys() {
+  try { const raw = localStorage.getItem(LS_KEYS); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+}
+
+function putSavedKeys(keys) {
+  try { localStorage.setItem(LS_KEYS, JSON.stringify(keys)); } catch (e) {}
+}
+
+function generateKeyId() { return 'k_' + Date.now() + '_' + Math.random().toString(36).substring(2,6); }
+
+function handleKeyBlur() {
+  var keyEl = document.getElementById('detectKey');
+  if (!keyEl) return;
+  var val = keyEl.value.trim();
+  if (!val) return;
+  var keys = getSavedKeys();
+  var existing = null;
+  for (var i = 0; i < keys.length; i++) { if (keys[i].key_value === val) { existing = keys[i]; break; } }
+  if (existing) { showKeyEditIcon(existing); return; }
+  showKeyTooltip(val);
+}
+
+function handleKeyFocus() {
+  var keys = getSavedKeys();
+  if (keys.length === 0) return;
+  var currentUrl = getDetectUrl();
+  var filtered = keys.filter(function(k) { return !k.url || k.url === currentUrl; });
+  if (filtered.length === 0) return;
+  var existing = document.getElementById('keyDropdown');
+  if (existing) existing.remove();
+  var keyEl = document.getElementById('detectKey');
+  if (!keyEl) return;
+  var rect = keyEl.getBoundingClientRect();
+  var dd = document.createElement('div');
+  dd.id = 'keyDropdown';
+  dd.className = 'key-dropdown';
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.left = rect.left + 'px';
+  filtered.sort(function(a,b) { return (a.updated_at||'') > (b.updated_at||'') ? -1 : 1; });
+  for (var i = 0; i < filtered.length; i++) {
+    (function(k) {
+      var item = document.createElement('div');
+      item.className = 'key-dropdown-item';
+      item.innerHTML = '<div class="label">' + escapeHtml(k.label) + '</div><div class="sub">' + escapeHtml(k.key_value.substring(0,12)) + '...' + escapeHtml(k.key_value.slice(-4)) + '</div>';
+      item.onclick = function() {
+        keyEl.value = k.key_value;
+        dd.remove();
+        saveDetectForm();
+        showKeyEditIcon(k);
+      };
+      dd.appendChild(item);
+    })(filtered[i]);
+  }
+  document.body.appendChild(dd);
+  setTimeout(function() {
+    document.addEventListener('click', function _close(e) {
+      if (!dd.contains(e.target) && e.target !== keyEl) { dd.remove(); document.removeEventListener('click', _close); }
+    });
+  }, 10);
+}
+
+function showKeyTooltip(keyVal) {
+  var tooltip = document.getElementById('keyTooltip');
+  var keyEl = document.getElementById('detectKey');
+  if (!tooltip || !keyEl) return;
+  var rect = keyEl.getBoundingClientRect();
+  tooltip.style.top = (rect.bottom + 4) + 'px';
+  tooltip.style.left = rect.left + 'px';
+  tooltip.style.display = 'block';
+  var defaultLabel = 'Key #' + (getSavedKeys().length + 1);
+  tooltip.innerHTML =
+    '<div style="margin-bottom:6px;color:var(--body);font-size:12px">为此 Key 添加备注</div>' +
+    '<input type="text" id="keyLabelInput" class="text-input" value="' + escapeHtml(defaultLabel) + '" placeholder="备注名" />' +
+    '<div class="btn-row">' +
+      '<button class="btn btn-small btn-secondary" onclick="skipKeyLabel()">跳过</button>' +
+      '<button class="btn btn-small btn-primary" onclick="confirmKeyLabel()">确定</button>' +
+    '</div>';
+  setTimeout(function() { var inp = document.getElementById('keyLabelInput'); if (inp) inp.focus(); }, 50);
+}
+
+function getDetectUrl() {
+  var el = document.getElementById('detectUrl');
+  return el ? el.value.trim() : '';
+}
+
+function confirmKeyLabel() {
+  var inp = document.getElementById('keyLabelInput');
+  var tooltip = document.getElementById('keyTooltip');
+  if (!inp || !tooltip) return;
+  var label = inp.value.trim() || 'Key #' + (getSavedKeys().length + 1);
+  var keyEl = document.getElementById('detectKey');
+  var val = keyEl ? keyEl.value.trim() : '';
+  if (!val) { tooltip.style.display = 'none'; return; }
+  var keys = getSavedKeys();
+  keys.push({ id: generateKeyId(), key_value: val, label: label, url: getDetectUrl(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  putSavedKeys(keys);
+  tooltip.style.display = 'none';
+  showKeyEditIcon({ key_value: val, label: label });
+}
+
+function skipKeyLabel() {
+  var tooltip = document.getElementById('keyTooltip');
+  var keyEl = document.getElementById('detectKey');
+  var val = keyEl ? keyEl.value.trim() : '';
+  if (!val) { tooltip.style.display = 'none'; return; }
+  var keys = getSavedKeys();
+  var label = 'Key #' + (keys.length + 1);
+  keys.push({ id: generateKeyId(), key_value: val, label: label, url: getDetectUrl(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  putSavedKeys(keys);
+  tooltip.style.display = 'none';
+  showKeyEditIcon({ key_value: val, label: label });
+}
+
+function clearKeyEditIcon() {
+  var el = document.getElementById('keyEditIcon');
+  if (el) el.remove();
+  var dd = document.getElementById('keyDropdown');
+  if (dd) dd.remove();
+}
+
+function showKeyEditIcon(savedKey) {
+  clearKeyEditIcon();
+  var keyEl = document.getElementById('detectKey');
+  if (!keyEl) return;
+  var icon = document.createElement('span');
+  icon.id = 'keyEditIcon';
+  icon.textContent = ' ✏️';
+  icon.style.cssText = 'cursor:pointer;font-size:14px;margin-left:4px;color:var(--muted);user-select:none';
+  icon.title = savedKey.label ? ('备注: ' + savedKey.label) : '编辑备注';
+  icon.onclick = function() { editKeyLabel(savedKey); };
+  keyEl.parentNode.insertBefore(icon, keyEl.nextSibling);
+}
+
+function editKeyLabel(savedKey) {
+  var tooltip = document.getElementById('keyTooltip');
+  var keyEl = document.getElementById('detectKey');
+  if (!tooltip || !keyEl) return;
+  var rect = keyEl.getBoundingClientRect();
+  tooltip.style.top = (rect.bottom + 4) + 'px';
+  tooltip.style.left = rect.left + 'px';
+  tooltip.style.display = 'block';
+  tooltip.innerHTML =
+    '<div style="margin-bottom:6px;color:var(--body);font-size:12px">修改备注</div>' +
+    '<input type="text" id="keyLabelInput" class="text-input" value="' + escapeHtml(savedKey.label) + '" placeholder="备注名" />' +
+    '<div class="btn-row">' +
+      '<button class="btn btn-small btn-secondary" onclick="document.getElementById(\\'keyTooltip\\').style.display=\\'none\\'">取消</button>' +
+      '<button class="btn btn-small btn-primary" onclick="updateKeyLabel()">确定</button>' +
+    '</div>';
+  setTimeout(function() { var inp = document.getElementById('keyLabelInput'); if (inp) inp.focus(); }, 50);
+}
+
+function updateKeyLabel() {
+  var inp = document.getElementById('keyLabelInput');
+  var tooltip = document.getElementById('keyTooltip');
+  if (!inp || !tooltip) return;
+  var label = inp.value.trim();
+  var keyEl = document.getElementById('detectKey');
+  var val = keyEl ? keyEl.value.trim() : '';
+  if (!val || !label) { tooltip.style.display = 'none'; return; }
+  var keys = getSavedKeys();
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].key_value === val) { keys[i].label = label; keys[i].updated_at = new Date().toISOString(); break; }
+  }
+  putSavedKeys(keys);
+  tooltip.style.display = 'none';
+}
+
+/* Quick add */
+async function quickAddEndpoint() {
+  var urlEl = document.getElementById('detectUrl');
+  var keyEl = document.getElementById('detectKey');
+  var pathEl = document.getElementById('detectPath');
+  if (!urlEl || !urlEl.value.trim()) return showToast('请输入 API URL', 'info');
+  var baseUrl = urlEl.value.trim().replace(/\\/+$/, '');
+  var path = pathEl ? pathEl.value.trim() : '';
+  var fullUrl = path ? (baseUrl + (path.startsWith('/') ? path : '/' + path)) : baseUrl;
+  var key = keyEl ? keyEl.value.trim() : '';
+  try {
+    var data = await API.post('/api/endpoints', { url: fullUrl, name: fullUrl, protocols: {}, models: [] });
+    var epId = data.endpoint?.id;
+    if (key && epId) {
+      await API.post('/api/endpoints/' + epId + '/keys', { key_value: key, alias: '' });
+    }
+    showToast('已保存到仪表盘');
+    navigate('/app');
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+async function quickAddProtocolCard(baseUrl, protocol, apiKey) {
+  var protos = {};
+  protos[protocol] = true;
+  try {
+    var data = await API.post('/api/endpoints', { url: baseUrl, name: baseUrl, protocols: protos, models: [] });
+    var epId = data.endpoint?.id;
+    if (apiKey && epId) {
+      await API.post('/api/endpoints/' + epId + '/keys', { key_value: apiKey, alias: '' });
+    }
+    showToast('已保存到仪表盘');
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
 const API_BASE = '';
 
 const API = {
@@ -895,17 +1207,22 @@ function renderDetectPage() {
     '</div>' +
     '<div class="card">' +
       '<div class="input-row">' +
-        '<input type="text" id="detectUrl" class="text-input" placeholder="API URL，如 https://api.cline.bot" />' +
+        '<input type="text" id="detectUrl" class="text-input" placeholder="API URL，如 https://api.cline.bot" oninput="saveDetectForm()" />' +
       '</div>' +
       '<div class="input-row" style="margin-top:8px">' +
-        '<input type="password" id="detectKey" class="text-input" placeholder="API Key（可选）" />' +
-        '<input type="text" id="detectPath" class="text-input" placeholder="自定义路径（可选）如 /v1/chat/completions" />' +
+        '<div style="position:relative;flex:1">' +
+          '<input type="password" id="detectKey" class="text-input" placeholder="API Key（可选）" oninput="saveDetectForm();clearKeyEditIcon()" onfocus="handleKeyFocus()" onblur="handleKeyBlur()" style="width:100%" />' +
+        '</div>' +
+        '<input type="text" id="detectPath" class="text-input" placeholder="自定义路径（可选）如 /v1/chat/completions" oninput="saveDetectForm()" />' +
       '</div>' +
       '<div class="input-row" style="margin-top:8px">' +
-        '<input type="text" id="detectModel" class="text-input" placeholder="模型 ID（可选）如 gpt-4o" />' +
-        '<input type="text" id="detectMessage" class="text-input" placeholder="聊天内容（可选，填写后直接发送）" />' +
+        '<input type="text" id="detectModel" class="text-input" placeholder="模型 ID（可选）如 gpt-4o" oninput="saveDetectForm()" />' +
+        '<input type="text" id="detectMessage" class="text-input" placeholder="聊天内容（可选，填写后直接发送）" oninput="saveDetectForm()" />' +
         '<button class="btn btn-primary" id="detectBtn" onclick="startDetection()">⚡ 检测</button>' +
+        '<button class="btn btn-secondary" onclick="quickAddEndpoint()">+ 添加</button>' +
+        '<button class="btn btn-secondary" id="resetBtn" onclick="handleReset()" style="display:none">↺ 重置</button>' +
       '</div>' +
+      '<div id="keyTooltip" class="key-tooltip" style="display:none"></div>' +
       '<div id="detectProgress" style="display:none;margin-top:12px;color:var(--muted);font-size:13px">' +
         '<span class="spinner"></span> 检测中...' +
       '</div>' +
@@ -920,7 +1237,7 @@ async function startDetection() {
   const path = document.getElementById('detectPath').value.trim();
   const model = document.getElementById('detectModel').value.trim();
   const message = document.getElementById('detectMessage').value.trim();
-  if (!url) return alert('请输入 API URL');
+  if (!url) return showToast('请输入 API URL', 'info');
 
   const btn = document.getElementById('detectBtn');
   const progress = document.getElementById('detectProgress');
@@ -988,6 +1305,7 @@ function renderDetectResults(data, url, apiKey, customPath) {
         '<div class="proto-status">' + statusText + (timeText ? ' · ' + timeText : '') + '</div>' +
         (info.url ? '<div class="proto-url">' + escapeHtml(info.url) + '</div>' : '') +
         '<button class="btn btn-small" style="margin-top:6px" onclick="quickTestProtocol(\\'' + escapeHtml(b.base) + '\\',\\'' + pk + '\\',\\'' + escapeHtml(apiKey) + '\\')">测试</button>' +
+        '<button class="btn btn-small btn-primary" style="margin-top:6px;margin-left:4px" onclick="quickAddProtocolCard(\\'' + escapeHtml(b.base) + '\\',\\'' + pk + '\\',\\'' + escapeHtml(apiKey) + '\\')">+ 添加</button>' +
       '</div>';
     }
     html += '</div>';
@@ -1076,11 +1394,11 @@ function renderSendResult(data, url, apiKey, path, model, message) {
 
 async function saveEndpoint() {
   const url = document.getElementById('detectUrl').value.trim();
-  if (!url) return alert('缺少 URL');
+  if (!url) return showToast('缺少 URL', 'info');
   const name = document.getElementById('saveEpName')?.value.trim() || url;
   const saveUrl = detectedBaseUrl || url;
   await API.post('/api/endpoints', { url: saveUrl, name, protocols: {}, models: [] });
-  alert('保存成功！');
+  showToast('保存成功！');
   navigate('/app');
 }
 
@@ -1105,7 +1423,7 @@ async function quickSend(baseUrl, apiKey) {
   const model = document.getElementById('quickModel').value.trim();
   const msg = document.getElementById('quickMsg').value.trim();
   const protocol = document.getElementById('quickProto').value;
-  if (!model || !msg) return alert('请输入模型 ID 和消息');
+  if (!model || !msg) return showToast('请输入模型 ID 和消息', 'info');
   const pathMap = { openai_chat: '/chat/completions', openai_responses: '/responses', anthropic: '/messages' };
   const fullUrl = baseUrl.replace(/\\/+$/, '') + (pathMap[protocol] || '/chat/completions');
   const el = document.getElementById('quickResult');
@@ -1126,16 +1444,16 @@ async function quickSend(baseUrl, apiKey) {
 async function quickVerifyModel(baseUrl, model, apiKey) {
   try {
     const data = await API.post('/api/test/model', { url: baseUrl, apiKey, model, protocol: 'openai_chat' });
-    alert('模型 ' + model + ': HTTP ' + data.status + (data.ok ? ' ✓' : ' ✗'));
+    showToast('模型 ' + model + ': HTTP ' + data.status + (data.ok ? ' ✓' : ' ✗'));
   } catch (e) {
-    alert('验证失败: ' + e.message);
+    showToast('验证失败: ' + e.message, 'error');
   }
 }
 
 async function retrySend(url, apiKey) {
   const model = document.getElementById('retryModel').value.trim();
   const msg = document.getElementById('retryMsg').value.trim();
-  if (!model || !msg) return alert('请输入模型 ID 和消息');
+  if (!model || !msg) return showToast('请输入模型 ID 和消息', 'info');
   const el = document.getElementById('retryResult');
   el.innerHTML = '<span class="spinner"></span> 发送中...';
   try {
@@ -1323,12 +1641,12 @@ async function updateEndpoint(id) {
   const notes = document.getElementById('epNotes')?.value;
   const autoHealth = document.getElementById('epAutoHealth')?.checked ? 1 : 0;
   await API.put('/api/endpoints/' + id, { name: name, notes: notes, auto_health: autoHealth });
-  alert('已保存');
+  showToast('已保存');
 }
 
 async function redetectEndpoint(id) {
   await API.post('/api/endpoints/' + id + '/redetect');
-  alert('重新检测完成');
+  showToast('重新检测完成');
   navigate('/app/endpoint/' + id);
 }
 
@@ -1341,7 +1659,7 @@ async function deleteEndpoint(id) {
 async function addKey(endpointId) {
   const keyValue = document.getElementById('newKeyValue')?.value;
   const alias = document.getElementById('newKeyAlias')?.value;
-  if (!keyValue) return alert('请输入 Key');
+  if (!keyValue) return showToast('请输入 Key', 'info');
   await API.post('/api/endpoints/' + endpointId + '/keys', { key_value: keyValue, alias: alias });
   document.getElementById('newKeyValue').value = '';
   document.getElementById('newKeyAlias').value = '';
@@ -1350,7 +1668,7 @@ async function addKey(endpointId) {
 
 async function checkKey(keyId) {
   const data = await API.post('/api/keys/' + keyId + '/check');
-  alert(data.is_alive ? '✅ 存活 (HTTP ' + data.status_code + ')' : '❌ 不可达');
+  showToast(data.is_alive ? '存活 (HTTP ' + data.status_code + ')' : '不可达 (HTTP ' + data.status_code + ')', data.is_alive ? 'success' : 'error');
   await loadEndpointDetail(location.pathname.split('/')[3]);
 }
 
@@ -1390,7 +1708,7 @@ async function sendChatMessage(endpointId) {
   if (!msg) return;
 
   const model = document.getElementById('chatModel')?.value.trim();
-  if (!model) return alert('请输入或选择模型 ID');
+  if (!model) return showToast('请输入或选择模型 ID', 'info');
   const protocol = document.getElementById('chatProtocol')?.value || 'openai_chat';
 
   input.value = '';
@@ -1537,6 +1855,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     await initApp();
+    restoreDetectForm();
     renderPage();
   } else if (location.pathname !== '/sso/callback') {
     const ssoUrl = 'https://auth.it0731.cn';
