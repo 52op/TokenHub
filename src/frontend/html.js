@@ -1995,7 +1995,7 @@ function renderChatMessages() {
         '<div class="content">' +
           '<div style="position:relative">' +
             '<div>' + renderMarkdown(m.content) + '</div>' +
-            '<button class="btn-small-ghost" style="position:absolute;top:0;right:0;font-size:11px" onclick="copyChatContent(this)" data-content="' + escapeHtml(m.content).replace(/"/g, '&quot;').replace(/\n/g, '\\n') + '">复制</button>' +
+            '<button class="btn-small-ghost" style="position:absolute;top:0;right:0;font-size:11px" onclick="copyChatContent(' + i + ')">复制</button>' +
           '</div>' +
           usageHtml +
         '</div>' +
@@ -2021,11 +2021,10 @@ function renderMarkdown(text) {
   return escapeHtml(text);
 }
 
-function copyChatContent(btn) {
-  var content = btn.getAttribute('data-content').replace(/\\n/g, '\n').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+function copyChatContent(msgIndex) {
+  var content = chatState.messages[msgIndex]?.content || '';
   navigator.clipboard.writeText(content).then(function() {
-    btn.textContent = '已复制';
-    setTimeout(function() { btn.textContent = '复制'; }, 1500);
+    showToast('已复制');
   });
 }
 
