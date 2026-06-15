@@ -797,6 +797,7 @@ textarea.text-input {
 
 const APP_JS = `
 const TOKEN_KEY = 'tokenhub_token';
+let detectedBaseUrl = '';
 const API_BASE = '';
 
 const API = {
@@ -936,6 +937,7 @@ async function startDetection() {
       results.innerHTML = renderSendResult(data, url, key, path, model, message);
     } else {
       const data = await API.post('/api/detect', { url, apiKey: key, path: path || undefined, model: model || undefined });
+      detectedBaseUrl = data.recommendedBase || url;
       results.innerHTML = renderDetectResults(data, url, key, path);
     }
   } catch (e) {
@@ -1076,7 +1078,8 @@ async function saveEndpoint() {
   const url = document.getElementById('detectUrl').value.trim();
   if (!url) return alert('缺少 URL');
   const name = document.getElementById('saveEpName')?.value.trim() || url;
-  await API.post('/api/endpoints', { url, name, protocols: {}, models: [] });
+  const saveUrl = detectedBaseUrl || url;
+  await API.post('/api/endpoints', { url: saveUrl, name, protocols: {}, models: [] });
   alert('保存成功！');
   navigate('/app');
 }
@@ -1176,7 +1179,7 @@ async function loadDashboard() {
     }
     let html = '<div class="endpoint-grid">';
     for (const ep of endpoints) {
-      const protos = (function() { try { return JSON.parse(ep.protocols); } catch { return {}; } })();
+      const protos = (function() { try { var p = JSON.parse(ep.protocols); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
       const protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
       const protoHtml = protoKeys.map(function(k) {
         const labels = { openai_chat: 'Chat', openai_responses: 'Responses', anthropic: 'Anthropic' };

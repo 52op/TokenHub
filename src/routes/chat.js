@@ -26,7 +26,7 @@ export async function handleChat(request, env) {
     baseUrl = endpoint.url;
 
     if (!protocol) {
-      const protos = (function() { try { return JSON.parse(endpoint.protocols || '{}'); } catch { return {}; } })();
+      const protos = (function() { try { var p = JSON.parse(endpoint.protocols || '{}'); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
       const keys = Object.keys(protos).filter(k => protos[k]);
       protocol = keys[0] || "openai_chat";
     }
