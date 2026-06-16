@@ -3321,7 +3321,7 @@ async function loadImportedFiles() {
         '<td>' + f.imported_rows + '</td>' +
         '<td style="font-size:12px;color:var(--muted)">' + escapeHtml(f.created_at || '') + '</td>' +
         '<td>' +
-          '<a href="/api/import/files/' + f.id + '/download" class="btn btn-small" target="_blank">下载</a> ' +
+          '<button class="btn btn-small" onclick="downloadImportedFile(\\'' + f.id + '\\',\\'' + escapeHtml(f.filename) + '\\')">下载</button> ' +
           '<button class="btn btn-small btn-danger" onclick="deleteImportedFile(\\'' + f.id + '\\')">删除</button>' +
         '</td>' +
       '</tr>';
@@ -3330,6 +3330,25 @@ async function loadImportedFiles() {
     el.innerHTML = html;
   } catch (err) {
     el.innerHTML = '<div style="color:var(--danger);font-size:13px">加载失败: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function downloadImportedFile(fileId, filename) {
+  try {
+    var token = localStorage.getItem(TOKEN_KEY);
+    var res = await fetch('/api/import/files/' + fileId + '/download', {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+    });
+    if (!res.ok) { var err = await res.json().catch(function(){return{}}); throw new Error(err.error || '下载失败'); }
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast('下载失败: ' + e.message, 'error');
   }
 }
 
