@@ -2098,24 +2098,62 @@ async function batchDeleteEndpoints() {
 
 var importParsedItems = [];
 
-function showImportDialog() {
+function buildImportDialog() {
   var area = document.getElementById('importArea');
   if (!area) return;
-  area.style.display = area.style.display === 'none' ? '' : 'none';
-  if (area.style.display === 'none') return;
+  area.style.display = '';
+  window._importSource = window._importSource || '';
   area.innerHTML = '<div class="card">' +
     '<div class="caption-uppercase" style="margin-bottom:12px">导入接口</div>' +
-    '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">支持 9router 备份文件（JSON），自动解析 providerConnections 中的接口和 Key。</p>' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+      '<button class="btn btn-small ' + (window._importSource !== 'cc' ? 'btn-primary' : '') + '" onclick="switchImportSource()">9router JSON</button>' +
+      '<button class="btn btn-small ' + (window._importSource === 'cc' ? 'btn-primary' : '') + '" onclick="switchImportSource(true)">CC-Switch 数据库</button>' +
+    '</div>' +
+    '<div id="importSourceDesc" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>' +
     '<div class="input-row">' +
-      '<input type="file" id="importFile" accept=".json" onchange="handleImportFile(this)" style="font-size:13px" />' +
+      '<input type="file" id="importFile" accept="' + (window._importSource === 'cc' ? '.db' : '.json') + '" onchange="handleImportFileFinal(this)" style="font-size:13px" />' +
     '</div>' +
     '<div id="importPreview"></div>' +
   '</div>';
+  updateImportSourceDesc();
 }
 
-function handleImportFile(input) {
+function showImportDialog() {
+  var area = document.getElementById('importArea');
+  if (!area) return;
+  if (area.style.display === 'none') {
+    buildImportDialog();
+  } else {
+    area.style.display = 'none';
+  }
+}
+
+function switchImportSource(isCc) {
+  window._importSource = isCc ? 'cc' : '';
+  buildImportDialog();
+}
+
+function updateImportSourceDesc() {
+  var desc = document.getElementById('importSourceDesc');
+  if (!desc) return;
+  if (window._importSource === 'cc') {
+    desc.textContent = '解析 CC-Switch SQLite 数据库中的 provider（支持 codex/claude/openclaw），自动提取接口、Key 和模型。';
+  } else {
+    desc.textContent = '上传 9router 备份 JSON 文件，自动解析 providerConnections 中的接口和 Key。';
+  }
+}
+
+function handleImportFileFinal(input) {
   var file = input.files[0];
   if (!file) return;
+  if (window._importSource === 'cc') {
+    handleCCSwitchFile(file);
+  } else {
+    handleImportFileJSON(file);
+  }
+}
+
+function handleImportFileJSON(file) {
   var reader = new FileReader();
   reader.onload = async function(e) {
     try {
@@ -2134,6 +2172,129 @@ function handleImportFile(input) {
     }
   };
   reader.readAsText(file);
+}
+
+function loadSqlJs() {
+  return new Promise(function(resolve, reject) {
+    if (window.SQL) return resolve(window.SQL);
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js';
+    script.onload = function() {
+      initSqlJs().then(function(SQL) { resolve(SQL); }).catch(reject);
+    };
+    script.onerror = function() { reject(new Error('加载 sql.js 失败')); };
+    document.head.appendChild(script);
+  });
+}
+
+function parseCCSwitchToml(configText) {
+  var result = { baseUrl: '', wireApi: '', model: '' };
+  if (!configText) return result;
+  var m;
+  m = configText.match(/base_url\s*=\s*"([^"]+)"/);
+  if (m) result.baseUrl = m[1];
+  m = configText.match(/wire_api\s*=\s*"([^"]+)"/);
+  if (m) result.wireApi = m[1];
+  m = configText.match(/^model\s*=\s*"([^"]+)"\s*$/m);
+  if (m) result.model = m[1];
+  return result;
+}
+
+function parseCCSwitchData(db) {
+  var items = [];
+  var stmt = db.prepare("SELECT p.id, p.app_type, p.name, p.settings_config, p.website_url, ep.url AS endpoint_url FROM providers p LEFT JOIN provider_endpoints ep ON ep.provider_id = p.id AND ep.app_type = p.app_type ORDER BY p.app_type, p.name");
+
+  while (stmt.step()) {
+    var row = stmt.getAsObject();
+    var name = row.name || '';
+    var appType = row.app_type || '';
+    if (appType === 'gemini') continue;
+    if (name.toLowerCase().indexOf('official') !== -1) continue;
+
+    var sc;
+    try { sc = JSON.parse(row.settings_config || '{}'); } catch(e) { sc = {}; }
+
+    var url = row.endpoint_url || '';
+    var keyValue = '';
+    var protocol = '';
+    var toml = {};
+    var models = [];
+
+    if (appType === 'codex') {
+      toml = parseCCSwitchToml(sc.config || '');
+      if (!url) url = toml.baseUrl;
+      if (sc.auth && sc.auth.OPENAI_API_KEY) keyValue = sc.auth.OPENAI_API_KEY;
+      protocol = toml.wireApi === 'responses' ? 'openai_responses' : 'openai_chat';
+      if (toml.model) models.push(toml.model);
+    } else if (appType === 'claude') {
+      var env = sc.env || {};
+      if (!url) url = env.ANTHROPIC_BASE_URL || '';
+      keyValue = env.ANTHROPIC_AUTH_TOKEN || '';
+      protocol = 'anthropic';
+      ['ANTHROPIC_MODEL','ANTHROPIC_DEFAULT_HAIKU_MODEL','ANTHROPIC_DEFAULT_SONNET_MODEL','ANTHROPIC_DEFAULT_OPUS_MODEL','ANTHROPIC_REASONING_MODEL'].forEach(function(k) {
+        if (env[k] && models.indexOf(env[k]) === -1) models.push(env[k]);
+      });
+    } else if (appType === 'openclaw') {
+      url = sc.baseUrl || url;
+      keyValue = sc.apiKey || '';
+      var apiType = sc.api || 'openai-completions';
+      if (apiType.indexOf('anthropic') !== -1) {
+        protocol = 'anthropic';
+      } else if (apiType.indexOf('gemini') !== -1) {
+        protocol = 'openai_chat';
+      } else {
+        protocol = 'openai_chat';
+      }
+      if (sc.models && Array.isArray(sc.models)) {
+        models = sc.models.map(function(m) { return m.id || m; }).filter(Boolean);
+      }
+    }
+
+    if (!url || !keyValue) continue;
+    if (!protocol) protocol = 'openai_chat';
+    models = models.filter(function(m) { return m && m !== 'undefined'; });
+    var uniqueModels = [];
+    models.forEach(function(m) { if (uniqueModels.indexOf(m) === -1) uniqueModels.push(m); });
+
+    items.push({
+      name: name,
+      url: url.replace(/\/+$/, ''),
+      protocol: protocol,
+      keyValue: keyValue,
+      defaultModel: uniqueModels.length > 0 ? uniqueModels[0] : '',
+      models: uniqueModels,
+    });
+  }
+  stmt.free();
+  return items;
+}
+
+async function handleCCSwitchFile(file) {
+  try {
+    var SQL = await loadSqlJs();
+    var buffer = await file.arrayBuffer();
+    var db = new SQL.Database(new Uint8Array(buffer));
+
+    var tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='providers'");
+    if (!tables || tables.length === 0 || tables[0].values.length === 0) {
+      db.close();
+      showToast('不是有效的 CC-Switch 数据库文件', 'error');
+      return;
+    }
+
+    var items = parseCCSwitchData(db);
+    db.close();
+
+    if (items.length === 0) {
+      showToast('未找到可导入的接口数据', 'error');
+      return;
+    }
+
+    importParsedItems = items;
+    renderImportPreview(items);
+  } catch (err) {
+    showToast('解析 CC-Switch 数据库失败: ' + err.message, 'error');
+  }
 }
 
 function renderImportPreview(items) {
