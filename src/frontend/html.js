@@ -1655,9 +1655,20 @@ function renderDashboard() {
     '</div>' +
     '<div id="importArea" style="display:none;margin-bottom:16px"></div>' +
     '<div class="search-bar">' +
-      '<div style="display:flex;gap:8px;align-items:center">' +
-        '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." style="flex:1" />' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<div style="position:relative;flex:1;min-width:200px">' +
+          '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." style="padding-right:32px" oninput="toggleSearchClear()" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
+          '<span id="searchClear" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--muted);font-size:16px;line-height:1" onclick="clearDashSearch()">×</span>' +
+        '</div>' +
+        '<select id="filterProtocol" class="text-input" style="max-width:160px" onchange="dashPage=1;loadDashboard()">' +
+          '<option value="">全部协议</option>' +
+          '<option value="openai_chat">OpenAI Chat</option>' +
+          '<option value="openai_responses">OpenAI Responses</option>' +
+          '<option value="anthropic">Anthropic</option>' +
+        '</select>' +
+        '<input type="text" id="filterModel" class="text-input" placeholder="模型 ID 筛选" style="max-width:180px" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
         '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
+        '<button class="btn btn-secondary" onclick="resetDashFilters()">重置</button>' +
       '</div>' +
     '</div>' +
     '<div id="endpointTable"></div>' +
@@ -1670,8 +1681,36 @@ var dashLimit = 20;
 var dashSort = 'created_at';
 var dashOrder = 'desc';
 
+function toggleSearchClear() {
+  var el = document.getElementById('searchClear');
+  var inp = document.getElementById('searchInput');
+  if (el && inp) el.style.display = inp.value ? '' : 'none';
+}
+
+function clearDashSearch() {
+  var inp = document.getElementById('searchInput');
+  if (inp) inp.value = '';
+  toggleSearchClear();
+  dashPage = 1;
+  loadDashboard();
+}
+
+function resetDashFilters() {
+  var s = document.getElementById('searchInput');
+  var p = document.getElementById('filterProtocol');
+  var m = document.getElementById('filterModel');
+  if (s) s.value = '';
+  if (p) p.value = '';
+  if (m) m.value = '';
+  toggleSearchClear();
+  dashPage = 1;
+  loadDashboard();
+}
+
 async function loadDashboard() {
   var search = document.getElementById('searchInput')?.value || '';
+  var filterProto = document.getElementById('filterProtocol')?.value || '';
+  var filterModel = document.getElementById('filterModel')?.value.trim() || '';
   var el = document.getElementById('endpointTable');
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
@@ -1680,10 +1719,26 @@ async function loadDashboard() {
     var data = await API.get('/api/endpoints?search=' + encodeURIComponent(search) + '&page=' + dashPage + '&limit=' + dashLimit + '&sort=' + dashSort + '&order=' + dashOrder);
     var endpoints = data.endpoints || [];
     var total = data.total || 0;
+
+    if (filterProto) {
+      endpoints = endpoints.filter(function(ep) {
+        try { var p = JSON.parse(ep.protocols); return p && p[filterProto]; } catch { return false; }
+      });
+    }
+    if (filterModel) {
+      var fm = filterModel.toLowerCase();
+      endpoints = endpoints.filter(function(ep) {
+        try {
+          var models = JSON.parse(ep.models || '[]');
+          return models.some(function(m) { return (typeof m === 'string' ? m : m.id || '').toLowerCase().includes(fm); });
+        } catch { return false; }
+      });
+    }
+
     var totalPages = Math.ceil(total / dashLimit);
 
     if (endpoints.length === 0) {
-      el.innerHTML = '<div class="empty-state">还没有保存的接口。<a href="/" onclick="return navigate(\\'/\\')">去检测一个</a></div>';
+      el.innerHTML = '<div class="empty-state">没有匹配的接口</div>';
       document.getElementById('endpointPagination').innerHTML = '';
       return;
     }
@@ -1699,6 +1754,7 @@ async function loadDashboard() {
         '<th style="cursor:pointer" onclick="dashSortBy(\\'name\\')">名称' + sortIcon('name') + '</th>' +
         '<th style="cursor:pointer" onclick="dashSortBy(\\'url\\')">URL' + sortIcon('url') + '</th>' +
         '<th>协议</th>' +
+        '<th>模型</th>' +
         '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\\'created_at\\')">创建时间' + sortIcon('created_at') + '</th>' +
         '<th style="width:60px">Key</th>' +
         '<th style="width:60px">操作</th>' +
@@ -1714,11 +1770,20 @@ async function loadDashboard() {
         return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
       }).join(' ');
 
+      var models = (function() { try { var m = JSON.parse(ep.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+      var modelHtml = models.length > 0
+        ? '<span style="font-size:12px;color:var(--muted)" title="' + escapeHtml(models.join(', ')) + '">' + models.length + ' 个</span>'
+        : '<span style="color:var(--muted)">-</span>';
+
+      var link = '/app/endpoint/' + ep.id;
+      var linkOnclick = 'event.preventDefault();navigate(\\'/app/endpoint/' + ep.id + '\\')';
+
       html += '<tr id="ep-row-' + ep.id + '">' +
         '<td><input type="checkbox" class="ep-cb" data-id="' + ep.id + '" /></td>' +
-        '<td><a href="/app/endpoint/' + ep.id + '" onclick="event.preventDefault();navigate(\\'/app/endpoint/' + ep.id + '\\')" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a></td>' +
-        '<td class="cell-url" style="max-width:300px">' + escapeHtml(ep.url) + '</td>' +
+        '<td><a href="' + link + '" onclick="' + linkOnclick + '" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a></td>' +
+        '<td class="cell-url" style="max-width:300px"><a href="' + link + '" onclick="' + linkOnclick + '" style="color:var(--text-link)">' + escapeHtml(ep.url) + '</a></td>' +
         '<td>' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</td>' +
+        '<td>' + modelHtml + '</td>' +
         '<td class="cell-time">' + formatTime(ep.created_at) + '</td>' +
         '<td style="text-align:center">' + (ep.key_count || 0) + '</td>' +
         '<td><button class="btn-small-ghost" style="color:var(--error)" onclick="deleteEndpointRow(\\'' + ep.id + '\\')">删除</button></td>' +
