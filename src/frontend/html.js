@@ -1257,6 +1257,7 @@ async function renderPage() {
       restoreDetectForm();
     } else if (path === '/app') {
       app.innerHTML = renderDashboard();
+      restoreDashState();
       await loadDashboard();
     } else if (path.startsWith('/app/endpoint/')) {
       const id = path.split('/')[3];
@@ -1666,7 +1667,10 @@ function renderDashboard() {
           '<option value="openai_responses">OpenAI Responses</option>' +
           '<option value="anthropic">Anthropic</option>' +
         '</select>' +
-        '<input type="text" id="filterModel" class="text-input" placeholder="模型 ID 筛选" style="max-width:180px" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
+        '<div style="position:relative;max-width:180px;flex:1">' +
+          '<input type="text" id="filterModel" class="text-input" placeholder="模型 ID 筛选" style="width:100%" onfocus="showModelDropdown()" oninput="filterModelDropdown()" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
+          '<div id="modelDropdown" class="key-dropdown" style="display:none;left:0;right:0;top:100%;margin-top:4px;max-height:240px;overflow-y:auto"></div>' +
+        '</div>' +
         '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
         '<button class="btn btn-secondary" onclick="resetDashFilters()">重置</button>' +
       '</div>' +
@@ -1707,6 +1711,90 @@ function resetDashFilters() {
   loadDashboard();
 }
 
+var allDashModels = [];
+
+function showModelDropdown() {
+  var dd = document.getElementById('modelDropdown');
+  if (!dd) return;
+  renderModelDropdownItems(allDashModels);
+  dd.style.display = '';
+  setTimeout(function() {
+    document.addEventListener('click', function _close(e) {
+      if (!dd.contains(e.target) && e.target.id !== 'filterModel') {
+        dd.style.display = 'none';
+        document.removeEventListener('click', _close);
+      }
+    });
+  }, 10);
+}
+
+function filterModelDropdown() {
+  var inp = document.getElementById('filterModel');
+  var dd = document.getElementById('modelDropdown');
+  if (!inp || !dd) return;
+  var q = inp.value.trim().toLowerCase();
+  var filtered = q ? allDashModels.filter(function(m) { return m.toLowerCase().includes(q); }) : allDashModels;
+  renderModelDropdownItems(filtered);
+  dd.style.display = '';
+}
+
+function renderModelDropdownItems(models) {
+  var dd = document.getElementById('modelDropdown');
+  if (!dd) return;
+  if (models.length === 0) {
+    dd.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--muted)">无匹配模型</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < models.length; i++) {
+    (function(m) {
+      html += '<div class="key-dropdown-item" style="cursor:pointer;font-family:var(--font-mono);font-size:12px" onclick="selectDashModel(\\'' + escapeHtml(m) + '\\')">' + escapeHtml(m) + '</div>';
+    })(models[i]);
+  }
+  dd.innerHTML = html;
+}
+
+function selectDashModel(model) {
+  var inp = document.getElementById('filterModel');
+  var dd = document.getElementById('modelDropdown');
+  if (inp) inp.value = model;
+  if (dd) dd.style.display = 'none';
+  dashPage = 1;
+  loadDashboard();
+}
+
+function saveDashState() {
+  try {
+    sessionStorage.setItem('tokenhub_dash', JSON.stringify({
+      search: document.getElementById('searchInput')?.value || '',
+      protocol: document.getElementById('filterProtocol')?.value || '',
+      model: document.getElementById('filterModel')?.value || '',
+      page: dashPage,
+      sort: dashSort,
+      order: dashOrder,
+    }));
+  } catch (e) {}
+}
+
+function restoreDashState() {
+  try {
+    var raw = sessionStorage.getItem('tokenhub_dash');
+    if (!raw) return false;
+    var s = JSON.parse(raw);
+    var si = document.getElementById('searchInput');
+    var pi = document.getElementById('filterProtocol');
+    var mi = document.getElementById('filterModel');
+    if (si) si.value = s.search || '';
+    if (pi) pi.value = s.protocol || '';
+    if (mi) mi.value = s.model || '';
+    dashPage = s.page || 1;
+    dashSort = s.sort || 'created_at';
+    dashOrder = s.order || 'desc';
+    toggleSearchClear();
+    return !!(s.search || s.protocol || s.model || s.page > 1);
+  } catch (e) { return false; }
+}
+
 async function loadDashboard() {
   var search = document.getElementById('searchInput')?.value || '';
   var filterProto = document.getElementById('filterProtocol')?.value || '';
@@ -1719,6 +1807,19 @@ async function loadDashboard() {
     var data = await API.get('/api/endpoints?search=' + encodeURIComponent(search) + '&page=' + dashPage + '&limit=' + dashLimit + '&sort=' + dashSort + '&order=' + dashOrder);
     var endpoints = data.endpoints || [];
     var total = data.total || 0;
+
+    var modelSet = {};
+    for (var ei = 0; ei < endpoints.length; ei++) {
+      try {
+        var ms = JSON.parse(endpoints[ei].models || '[]');
+        for (var mi = 0; mi < ms.length; mi++) {
+          var mid = typeof ms[mi] === 'string' ? ms[mi] : (ms[mi].id || '');
+          if (mid) modelSet[mid] = true;
+        }
+      } catch {}
+    }
+    allDashModels = Object.keys(modelSet).sort();
+    saveDashState();
 
     if (filterProto) {
       endpoints = endpoints.filter(function(ep) {
