@@ -1820,6 +1820,8 @@ function renderDashboard() {
         '</div>' +
         '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
         '<button class="btn btn-secondary" onclick="resetDashFilters()">重置</button>' +
+        '<span style="flex:1"></span>' +
+        '<button class="btn btn-small-ghost" style="color:var(--error)" onclick="batchDeleteEndpoints()">删除选中</button>' +
       '</div>' +
     '</div>' +
     '<div id="endpointTable"></div>' +
