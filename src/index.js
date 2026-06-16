@@ -12,6 +12,7 @@ import * as testRoute from "./routes/test.js";
 import * as chatRoute from "./routes/chat.js";
 import * as importRoute from "./routes/import.js";
 import * as modelsRoute from "./routes/models.js";
+import * as exportRoute from "./routes/export.js";
 import { renderApp, renderSSOCallback } from "./frontend/html.js";
 
 export default {
@@ -169,6 +170,11 @@ export default {
     // Models
     if (path === "/api/models" && request.method === "GET") {
       return modelsRoute.handleGetModels(request, env);
+    }
+
+    // Export
+    if (path === "/api/export/9router" && request.method === "GET") {
+      return exportRoute.handleExport9router(request, env);
     }
 
     return new Response("Not Found", { status: 404 });
