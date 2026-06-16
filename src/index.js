@@ -81,6 +81,9 @@ export default {
     if (path === "/api/endpoints" && request.method === "GET") {
       return endpointsRoute.handleList(request, env);
     }
+    if (path === "/api/endpoints/batch-delete" && request.method === "POST") {
+      return endpointsRoute.handleBatchDelete(request, env);
+    }
     if (path === "/api/endpoints" && request.method === "POST") {
       return endpointsRoute.handleCreate(request, env);
     }

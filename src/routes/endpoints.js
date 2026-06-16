@@ -52,6 +52,16 @@ export async function handleDelete(request, env, id) {
   return jsonResponse({ success: true });
 }
 
+export async function handleBatchDelete(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return errorResponse("未登录", 401);
+  const body = await request.json();
+  if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0)
+    return errorResponse("缺少 ids 参数");
+  await db.deleteEndpoints(env, body.ids, user.id);
+  return jsonResponse({ success: true, count: body.ids.length });
+}
+
 export async function handleRedetect(request, env, id) {
   const user = await requireUser(request, env);
   if (!user) return errorResponse("未登录", 401);

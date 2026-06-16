@@ -105,6 +105,16 @@ export async function deleteEndpoint(env, id, userId) {
     .bind(id, userId).run();
 }
 
+export async function deleteEndpoints(env, ids, userId) {
+  const placeholders = ids.map(() => "?").join(",");
+  await env.DB.prepare(`DELETE FROM api_keys WHERE endpoint_id IN (${placeholders}) AND user_id = ?`)
+    .bind(...ids, userId).run();
+  await env.DB.prepare(`DELETE FROM health_checks WHERE endpoint_id IN (${placeholders}) AND user_id = ?`)
+    .bind(...ids, userId).run();
+  await env.DB.prepare(`DELETE FROM endpoints WHERE id IN (${placeholders}) AND user_id = ?`)
+    .bind(...ids, userId).run();
+}
+
 // ==================== API Keys ====================
 
 export async function getKeys(env, endpointId, userId) {

@@ -2098,14 +2098,16 @@ async function batchDeleteEndpoints() {
   var cbs = document.querySelectorAll('.ep-cb:checked');
   if (cbs.length === 0) return showToast('请先选择接口', 'info');
   if (!confirm('确定删除选中的 ' + cbs.length + ' 个接口？')) return;
+  var btn = document.querySelector('button[onclick="batchDeleteEndpoints()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '删除中 (' + cbs.length + ')...'; }
   var ids = Array.from(cbs).map(function(cb) { return cb.dataset.id; });
   try {
-    for (var i = 0; i < ids.length; i++) {
-      await API.del('/api/endpoints/' + ids[i]);
-    }
-    showToast('已删除 ' + ids.length + ' 个接口');
+    await API.post('/api/endpoints/batch-delete', { ids: ids });
+    showToast('已删除 ' + ids.length + ' 个接口', 'success');
+    if (btn) { btn.disabled = false; btn.textContent = '删除选中'; }
     await loadDashboard();
   } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '删除选中'; }
     showToast('删除失败: ' + e.message, 'error');
   }
 }
