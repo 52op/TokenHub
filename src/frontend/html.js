@@ -1232,8 +1232,12 @@ const API = {
   put(path, body) { return this.call('PUT', path, body); },
   del(path) { return this.call('DELETE', path); },
   upload: async function(url, formData) {
+    var headers = {};
+    var token = localStorage.getItem(TOKEN_KEY);
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     var res = await fetch(url, {
       method: 'POST',
+      headers: headers,
       body: formData,
       credentials: 'same-origin',
     });
@@ -2398,8 +2402,8 @@ async function executeImport() {
   if (btn) { btn.disabled = true; btn.textContent = '导入中...'; }
   if (progressArea) progressArea.style.display = '';
 
-  if (progressText) progressText.textContent = '正在导入...';
-  if (progressCount) progressCount.textContent = '.../' + total;
+  if (progressText) progressText.textContent = '正在批量导入 ' + total + ' 条数据...';
+  if (progressCount) progressCount.textContent = '~/' + total;
   if (progressBar) { progressBar.style.width = '60%'; progressBar.style.animation = 'pulse 1s infinite'; }
 
   try {
@@ -2418,7 +2422,7 @@ async function executeImport() {
   try {
     await saveImportFile(items, imported);
   } catch (e) {
-    // non-blocking
+    showToast('导入文件保存到云存储失败: ' + e.message, 'error');
   }
 
   showToast('导入完成: ' + imported + ' 个接口' + (skipped > 0 ? '，跳过 ' + skipped : ''));
