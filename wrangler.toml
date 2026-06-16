@@ -16,4 +16,4 @@ crons = ["*/30 * * * *"]
 
 [[r2_buckets]]
 binding = "IMPORTS_BUCKET"
-bucket_name = "tokenhub-imports"
+bucket_name = "it0731-files"

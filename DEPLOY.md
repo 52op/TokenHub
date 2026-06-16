@@ -64,6 +64,16 @@ database_id = "你的D1数据库ID"   # ← 替换为实际 ID
 
 > `database_id` 不是敏感信息（仅为资源标识符），放配置文件中是安全的。
 
+## 5b. （可选）创建 R2 Bucket
+
+如果需要后台「导入文件云存储」功能，才需要此步骤：
+
+1. Dashboard → **R2** → **Create bucket**，名称填 `tokenhub-imports`
+2. `wrangler.toml` 中已预填 `[[r2_buckets]]` 绑定，无需额外配置
+3. 部署后管理员可在后台「站点设置」中开启「导入文件云存储」
+
+若未配置 R2 Bucket，后台开关会显示「未配置 R2 Bucket」并保持禁用状态，不影响其他功能。
+
 ## 6. 配置环境变量
 
 `AUTH_MODE` 和 `SSO_ISSUER` 已写在 `wrangler.toml` 中，Git 部署会自动注入，**无需**在 Dashboard 重复设置。
@@ -97,12 +107,13 @@ Worker → **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Tr
 ## 完整检查清单
 
 | 步骤 | 完成 |
-|---|---|
+|---|---|---|
 | 代码推送到 GitHub | ☐ |
 | Worker 创建 + Git 连接 | ☐ |
 | D1 数据库创建 + schema 初始化 | ☐ |
 | `wrangler.toml` 中填入 D1 `database_id` | ☐ |
 | Secret `SSO_PUBLIC_KEY` 注入（Dashboard） | ☐ |
+| R2 bucket `tokenhub-imports` 创建（可选） | ☐ |
 | Cron 触发器配置（Dashboard） | ☐ |
 | 首次部署成功 | ☐ |
 | 登录验证 + 头像显示确认 | ☐ |
