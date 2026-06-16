@@ -78,3 +78,15 @@ INSERT OR IGNORE INTO site_settings (key, value) VALUES ('site_name', 'TokenHub'
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('site_description', 'AI API 接口检测与管理工具');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('default_health_interval', '30');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('max_auto_endpoints', '10');
+
+CREATE TABLE IF NOT EXISTS imported_files (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  file_type TEXT NOT NULL,
+  r2_key TEXT NOT NULL,
+  file_size INTEGER DEFAULT 0,
+  imported_rows INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_imported_files_user ON imported_files(user_id);

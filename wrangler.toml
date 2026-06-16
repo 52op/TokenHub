@@ -13,3 +13,7 @@ SSO_ISSUER = "https://auth.it0731.cn"
 
 [triggers]
 crons = ["*/30 * * * *"]
+
+[[r2_buckets]]
+binding = "IMPORTS_BUCKET"
+bucket_name = "tokenhub-imports"
