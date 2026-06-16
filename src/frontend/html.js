@@ -3245,7 +3245,7 @@ async function exportCCSwitch() {
 
       for (var ki = 0; ki < ep.keys.length; ki++) {
         totalProviders++;
-        var pid = slug + '-' + now + '-' + ki;
+        var pid = slug + '-' + now + '-' + ei + '-' + ki;
         var pname = ep.name + (ep.keys.length > 1 ? ' #' + (ki + 1) : '');
 
         var singleEp = { url: ep.url, protocols: protos, models: ep.models, keys: [ep.keys[ki]] };
