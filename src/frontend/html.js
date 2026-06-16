@@ -3031,6 +3031,7 @@ function renderAdminPage() {
       '<div class="caption-uppercase" style="margin-bottom:12px">数据导出</div>' +
       '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">导出当前数据，可在 9router 或其他兼容工具中导入使用。导出的文件包含 API Key，请注意保管。</p>' +
       '<button class="btn btn-primary btn-small" onclick="export9router()">导出 9router JSON</button>' +
+      '<button class="btn btn-small" onclick="exportCCSwitch()" style="margin-left:8px">导出 CC-Switch .db</button>' +
     '</div>' +
     '<div class="card" style="margin-top:16px">' +
       '<div class="caption-uppercase" style="margin-bottom:12px">导入文件</div>' +
@@ -3126,6 +3127,87 @@ async function export9router() {
     showToast('导出成功: ' + data.providerConnections.length + ' 个连接', 'success');
   } catch (err) {
     showToast('导出失败: ' + err.message, 'error');
+  }
+}
+
+async function exportCCSwitch() {
+  if (!confirm('导出的文件包含所有 API Key，请确认环境安全后再下载。是否继续？')) return;
+
+  var btn = document.querySelector('button[onclick="exportCCSwitch()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+
+  try {
+    var SQL = null;
+    try {
+      SQL = await loadSqlJs();
+    } catch (e) {
+      showToast('sql.js 加载失败，降级为 JSON 格式下载', 'info');
+      var data = await API.get('/api/export/ccswitch-data');
+      if (!data.providers || data.providers.length === 0) {
+        showToast('没有可导出的数据', 'info');
+        return;
+      }
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ccswitch-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('已降级导出为 JSON 格式', 'info');
+      return;
+    }
+
+    var data = await API.get('/api/export/ccswitch-data');
+    if (!data.providers || data.providers.length === 0) {
+      showToast('没有可导出的数据', 'info');
+      return;
+    }
+
+    var db = new SQL.Database();
+
+    db.run("CREATE TABLE IF NOT EXISTS providers (" +
+      "id INTEGER PRIMARY KEY, app_type TEXT, name TEXT, slug TEXT, sort INTEGER DEFAULT 0, " +
+      "settings_config TEXT, website_url TEXT DEFAULT '', enable_provider INTEGER DEFAULT 1, " +
+      "created_at TEXT, updated_at TEXT, deleted_at TEXT)");
+
+    db.run("CREATE TABLE IF NOT EXISTS provider_endpoints (" +
+      "id INTEGER PRIMARY KEY, provider_id INTEGER, app_type TEXT, endpoint_type TEXT DEFAULT 'main', " +
+      "name TEXT, baseUrl TEXT, apiKey TEXT, models TEXT DEFAULT '', sort INTEGER DEFAULT 0, " +
+      "status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT, deleted_at TEXT)");
+
+    var insertProvider = db.prepare("INSERT INTO providers (id, app_type, name, slug, sort, settings_config, website_url, enable_provider, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (var i = 0; i < data.providers.length; i++) {
+      var p = data.providers[i];
+      insertProvider.run([p.id, p.app_type, p.name, p.slug, p.sort, p.settings_config, p.website_url, p.enable_provider, p.created_at, p.updated_at, p.deleted_at]);
+    }
+    insertProvider.free();
+
+    var insertEp = db.prepare("INSERT INTO provider_endpoints (id, provider_id, app_type, endpoint_type, name, baseUrl, apiKey, models, sort, status, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (var j = 0; j < data.provider_endpoints.length; j++) {
+      var ep = data.provider_endpoints[j];
+      insertEp.run([ep.id, ep.provider_id, ep.app_type, ep.endpoint_type, ep.name, ep.baseUrl, ep.apiKey, ep.models, ep.sort, ep.status, ep.created_at, ep.updated_at, ep.deleted_at]);
+    }
+    insertEp.free();
+
+    var binaryArray = db.export();
+    db.close();
+
+    var blob = new Blob([binaryArray], { type: 'application/x-sqlite3' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'ccswitch-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.db';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('导出成功: ' + data.providers.length + ' 个提供者', 'success');
+  } catch (err) {
+    showToast('导出失败: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '导出 CC-Switch .db'; }
   }
 }
 
