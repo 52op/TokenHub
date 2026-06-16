@@ -40,7 +40,12 @@ export async function handle(request, env, path) {
       const settings = await db.getSiteSettings(env);
       const map = {};
       for (const row of settings.results || []) map[row.key] = row.value;
-      return jsonResponse({ settings: map });
+      return jsonResponse({
+        settings: map,
+        _meta: {
+          hasImportBucket: typeof env.IMPORTS_BUCKET !== "undefined",
+        },
+      });
     }
     if (request.method === "PUT") {
       const body = await request.json();

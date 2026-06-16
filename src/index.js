@@ -13,6 +13,7 @@ import * as chatRoute from "./routes/chat.js";
 import * as importRoute from "./routes/import.js";
 import * as modelsRoute from "./routes/models.js";
 import * as exportRoute from "./routes/export.js";
+import * as importFilesRoute from "./routes/import-files.js";
 import { renderApp, renderSSOCallback } from "./frontend/html.js";
 
 export default {
@@ -165,6 +166,22 @@ export default {
     }
     if (path === "/api/import" && request.method === "POST") {
       return importRoute.handleImport(request, env);
+    }
+
+    // Import file storage
+    if (path === "/api/import/save-file" && request.method === "POST") {
+      return importFilesRoute.handleSaveFile(request, env);
+    }
+    if (path === "/api/import/files" && request.method === "GET") {
+      return importFilesRoute.handleListFiles(request, env);
+    }
+    var importFileMatch = path.match(/^\/api\/import\/files\/([^/]+)\/download$/);
+    if (importFileMatch && request.method === "GET") {
+      return importFilesRoute.handleDownloadFile(request, env, importFileMatch[1]);
+    }
+    importFileMatch = path.match(/^\/api\/import\/files\/([^/]+)$/);
+    if (importFileMatch && request.method === "DELETE") {
+      return importFilesRoute.handleDeleteFile(request, env, importFileMatch[1]);
     }
 
     // Models
