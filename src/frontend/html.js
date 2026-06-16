@@ -1650,41 +1650,137 @@ function renderDashboard() {
       '<h2 class="display-sm">我的接口</h2>' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-secondary" onclick="showImportDialog()">导入</button>' +
-        '<button class="btn btn-secondary" id="batchModeBtn" onclick="toggleBatchMode()">批量删除</button>' +
         '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
       '</div>' +
     '</div>' +
     '<div id="importArea" style="display:none;margin-bottom:16px"></div>' +
-    '<div id="batchBar" style="display:none;margin-bottom:12px;padding:10px 16px;background:var(--canvas-soft);border-radius:var(--radius-md);font-size:13px;color:var(--body)">' +
-      '<label class="toggle" style="margin-right:12px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /> <span>全选</span></label>' +
-      '<button class="btn btn-small" style="color:var(--error);border-color:var(--error)" onclick="batchDeleteEndpoints()">删除选中</button>' +
-    '</div>' +
     '<div class="search-bar">' +
-      '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." oninput="loadDashboard()" />' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" id="searchInput" class="text-input" placeholder="搜索接口名称或 URL..." style="flex:1" />' +
+        '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
+      '</div>' +
     '</div>' +
-    '<div id="endpointList"></div>' +
+    '<div id="endpointTable"></div>' +
+    '<div id="endpointPagination"></div>' +
   '</div>';
 }
 
-var batchMode = false;
-function toggleBatchMode() {
-  batchMode = !batchMode;
-  var bar = document.getElementById('batchBar');
-  var btn = document.getElementById('batchModeBtn');
-  if (bar) bar.style.display = batchMode ? '' : 'none';
-  if (btn) btn.textContent = batchMode ? '取消' : '批量删除';
-  document.querySelectorAll('.ep-cb').forEach(function(el) { el.style.display = batchMode ? '' : 'none'; });
-  document.querySelectorAll('.ep-del-btn').forEach(function(el) { el.style.display = batchMode ? 'none' : ''; });
-  if (!batchMode) document.querySelectorAll('.ep-cb input').forEach(function(el) { el.checked = false; });
+var dashPage = 1;
+var dashLimit = 20;
+var dashSort = 'created_at';
+var dashOrder = 'desc';
+
+async function loadDashboard() {
+  var search = document.getElementById('searchInput')?.value || '';
+  var el = document.getElementById('endpointTable');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+
+  try {
+    var data = await API.get('/api/endpoints?search=' + encodeURIComponent(search) + '&page=' + dashPage + '&limit=' + dashLimit + '&sort=' + dashSort + '&order=' + dashOrder);
+    var endpoints = data.endpoints || [];
+    var total = data.total || 0;
+    var totalPages = Math.ceil(total / dashLimit);
+
+    if (endpoints.length === 0) {
+      el.innerHTML = '<div class="empty-state">还没有保存的接口。<a href="/" onclick="return navigate(\\'/\\')">去检测一个</a></div>';
+      document.getElementById('endpointPagination').innerHTML = '';
+      return;
+    }
+
+    var sortIcon = function(col) {
+      if (dashSort !== col) return '';
+      return dashOrder === 'asc' ? ' ↑' : ' ↓';
+    };
+
+    var html = '<table class="health-table">' +
+      '<tr>' +
+        '<th style="width:30px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /></th>' +
+        '<th style="cursor:pointer" onclick="dashSortBy(\\'name\\')">名称' + sortIcon('name') + '</th>' +
+        '<th style="cursor:pointer" onclick="dashSortBy(\\'url\\')">URL' + sortIcon('url') + '</th>' +
+        '<th>协议</th>' +
+        '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\\'created_at\\')">创建时间' + sortIcon('created_at') + '</th>' +
+        '<th style="width:60px">Key</th>' +
+        '<th style="width:60px">操作</th>' +
+      '</tr>';
+
+    for (var i = 0; i < endpoints.length; i++) {
+      var ep = endpoints[i];
+      var protos = (function() { try { var p = JSON.parse(ep.protocols); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
+      var protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
+      var protoHtml = protoKeys.map(function(k) {
+        var labels = { openai_chat: 'Chat', openai_responses: 'Resp', anthropic: 'Anth' };
+        var colors = { openai_chat: 'badge-green', openai_responses: 'badge-blue', anthropic: 'badge-purple' };
+        return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
+      }).join(' ');
+
+      html += '<tr id="ep-row-' + ep.id + '">' +
+        '<td><input type="checkbox" class="ep-cb" data-id="' + ep.id + '" /></td>' +
+        '<td><a href="/app/endpoint/' + ep.id + '" onclick="event.preventDefault();navigate(\\'/app/endpoint/' + ep.id + '\\')" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a></td>' +
+        '<td class="cell-url" style="max-width:300px">' + escapeHtml(ep.url) + '</td>' +
+        '<td>' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</td>' +
+        '<td class="cell-time">' + formatTime(ep.created_at) + '</td>' +
+        '<td style="text-align:center">' + (ep.key_count || 0) + '</td>' +
+        '<td><button class="btn-small-ghost" style="color:var(--error)" onclick="deleteEndpointRow(\\'' + ep.id + '\\')">删除</button></td>' +
+      '</tr>';
+    }
+    html += '</table>';
+    el.innerHTML = html;
+
+    var pagEl = document.getElementById('endpointPagination');
+    if (totalPages <= 1) {
+      pagEl.innerHTML = '<div style="text-align:center;padding:12px;font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</div>';
+    } else {
+      var pagHtml = '<div style="display:flex;justify-content:center;align-items:center;gap:8px;padding:16px">' +
+        '<button class="btn btn-small" onclick="dashGoPage(1)"' + (dashPage <= 1 ? ' disabled' : '') + '>首页</button>' +
+        '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage - 1) + ')"' + (dashPage <= 1 ? ' disabled' : '') + '>上一页</button>';
+      var startPage = Math.max(1, dashPage - 2);
+      var endPage = Math.min(totalPages, dashPage + 2);
+      for (var p = startPage; p <= endPage; p++) {
+        pagHtml += '<button class="btn btn-small' + (p === dashPage ? ' btn-primary' : '') + '" onclick="dashGoPage(' + p + ')">' + p + '</button>';
+      }
+      pagHtml += '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage + 1) + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>下一页</button>' +
+        '<button class="btn btn-small" onclick="dashGoPage(' + totalPages + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>末页</button>' +
+        '<span style="font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</span>' +
+      '</div>';
+      pagEl.innerHTML = pagHtml;
+    }
+  } catch (e) {
+    el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function dashGoPage(page) {
+  dashPage = page;
+  loadDashboard();
+}
+
+function dashSortBy(col) {
+  if (dashSort === col) {
+    dashOrder = dashOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    dashSort = col;
+    dashOrder = 'asc';
+  }
+  dashPage = 1;
+  loadDashboard();
 }
 
 function toggleSelectAll() {
   var checked = document.getElementById('selectAllCb')?.checked;
-  document.querySelectorAll('.ep-cb input').forEach(function(el) { el.checked = checked; });
+  document.querySelectorAll('.ep-cb').forEach(function(el) { el.checked = checked; });
+}
+
+async function deleteEndpointRow(id) {
+  if (!confirm('确定删除此接口及所有 Key？')) return;
+  await API.del('/api/endpoints/' + id);
+  var row = document.getElementById('ep-row-' + id);
+  if (row) row.remove();
+  showToast('已删除');
 }
 
 async function batchDeleteEndpoints() {
-  var cbs = document.querySelectorAll('.ep-cb input:checked');
+  var cbs = document.querySelectorAll('.ep-cb:checked');
   if (cbs.length === 0) return showToast('请先选择接口', 'info');
   if (!confirm('确定删除选中的 ' + cbs.length + ' 个接口？')) return;
   var ids = Array.from(cbs).map(function(cb) { return cb.dataset.id; });
@@ -1693,60 +1789,9 @@ async function batchDeleteEndpoints() {
       await API.del('/api/endpoints/' + ids[i]);
     }
     showToast('已删除 ' + ids.length + ' 个接口');
-    batchMode = false;
     await loadDashboard();
   } catch (e) {
     showToast('删除失败: ' + e.message, 'error');
-  }
-}
-
-async function loadDashboard() {
-  const search = document.getElementById('searchInput')?.value || '';
-  const el = document.getElementById('endpointList');
-  if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
-
-  try {
-    const data = await API.get('/api/endpoints?search=' + encodeURIComponent(search));
-    const endpoints = data.endpoints || [];
-    if (endpoints.length === 0) {
-      el.innerHTML = '<div class="empty-state">还没有保存的接口。<a href="/" onclick="return navigate(\\'/\\')">去检测一个</a></div>';
-      return;
-    }
-    let html = '<div class="endpoint-grid">';
-    for (const ep of endpoints) {
-      const protos = (function() { try { var p = JSON.parse(ep.protocols); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
-      const protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
-      const protoHtml = protoKeys.map(function(k) {
-        const labels = { openai_chat: 'Chat', openai_responses: 'Responses', anthropic: 'Anthropic' };
-        const colors = { openai_chat: 'badge-green', openai_responses: 'badge-blue', anthropic: 'badge-purple' };
-        return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
-      }).join(' ');
-
-      const keyCount = ep.key_count || 0;
-
-      html += '<div class="endpoint-card" id="ep-card-' + ep.id + '" onclick="navigate(\\'/app/endpoint/' + ep.id + '\\')">' +
-        '<div class="ep-cb" style="display:' + (batchMode ? '' : 'none') + ';position:absolute;top:12px;left:12px;z-index:2" onclick="event.stopPropagation()">' +
-          '<input type="checkbox" data-id="' + ep.id + '" />' +
-        '</div>' +
-        '<button class="btn-small ep-del-btn" style="position:absolute;top:12px;right:12px;z-index:2;font-size:11px;color:var(--error);border:1px solid var(--error);background:var(--surface-card);cursor:pointer;padding:2px 8px;border-radius:var(--radius-sm)" onclick="event.stopPropagation();deleteEndpointCard(\\'' + ep.id + '\\')">删除</button>' +
-        '<div class="ep-name">' + escapeHtml(ep.name || ep.url) + '</div>' +
-        '<div class="ep-url">' + escapeHtml(ep.url) + '</div>' +
-        '<div style="display:flex;gap:4px;align-items:center;margin-top:8px">' +
-          protoHtml +
-          '<span class="badge badge-muted">' + keyCount + ' Key</span>' +
-        '</div>' +
-        '<div class="ep-meta">' + (ep.last_detected_at ? '检测: ' + ep.last_detected_at : '未检测') + '</div>' +
-      '</div>';
-    }
-    html += '</div>';
-    el.innerHTML = html;
-    if (batchMode) {
-      document.querySelectorAll('.ep-cb').forEach(function(el) { el.style.display = ''; });
-      document.querySelectorAll('.ep-del-btn').forEach(function(el) { el.style.display = 'none'; });
-    }
-  } catch (e) {
-    el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
   }
 }
 
