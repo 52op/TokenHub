@@ -3152,9 +3152,9 @@ function ccBuildSettings(ep) {
   }
 
   if (appType === 'codex') {
-    var config = 'model_provider = "custom"\n';
-    if (model) config += 'model = "' + model + '"\n';
-    config += '\n[model_providers.custom]\nname = "custom"\nwire_api = "' + wireApi + '"\nbase_url = "' + ep.url + '"\n';
+    var config = 'model_provider = "custom"\\n';
+    if (model) config += 'model = "' + model + '"\\n';
+    config += '\\n[model_providers.custom]\\nname = "custom"\\nwire_api = "' + wireApi + '"\\nbase_url = "' + ep.url + '"\\n';
     var auth = { OPENAI_API_KEY: keyValue, auth_mode: 'apikey' };
     return JSON.stringify({ auth: auth, config: config });
   }
@@ -3268,8 +3268,8 @@ async function exportCCSwitch() {
 
     // Default settings
     var insertSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
-    insertSetting.run(['common_config_codex', 'model_reasoning_effort = "high"\n']);
-    insertSetting.run(['common_config_claude', '{\n  "includeCoAuthoredBy": false\n}']);
+    insertSetting.run(['common_config_codex', 'model_reasoning_effort = "high"\\n']);
+    insertSetting.run(['common_config_claude', '{\\n  "includeCoAuthoredBy": false\\n}']);
     insertSetting.run(['universal_providers', '{}']);
     insertSetting.run(['official_providers_seeded', 'true']);
     insertSetting.run(['common_config_legacy_migrated_v1', 'true']);
