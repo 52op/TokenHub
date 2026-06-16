@@ -1501,25 +1501,26 @@ function renderDetectResults(data, url, apiKey, customPath) {
       '<div class="best-base-url">' + escapeHtml(data.recommendedBase) + '</div></div>';
   }
 
-  for (const b of (data.allBases || [])) {
+  for (var bi = 0; bi < (data.allBases || []).length; bi++) {
+    var b = data.allBases[bi];
     html += '<div class="card">';
     if (isProbe && b.modelVerified) {
       html += '<div style="margin-bottom:12px;font-size:13px;color:' + (b.modelVerified.ok ? 'var(--success)' : 'var(--error)') + '">模型验证: HTTP ' + b.modelVerified.status + (b.modelVerified.ok ? ' ✓' : ' ✗') + '</div>';
     }
 
     // Protocol badges
-    const allProtoKeys = Object.keys(b.protocols);
-    const supportedKeys = allProtoKeys.filter(function(k) { return b.protocols[k].supported; });
+    var allProtoKeys = Object.keys(b.protocols);
+    var supportedKeys = allProtoKeys.filter(function(k) { return b.protocols[k].supported; });
     html += '<div class="caption-uppercase" style="margin-bottom:12px">协议</div>' +
       '<div class="protocol-grid">';
 
-    const protoLabels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
+    var protoLabels = { openai_chat: 'OpenAI Chat', openai_responses: 'OpenAI Responses', anthropic: 'Anthropic' };
 
     for (const [pk, info] of Object.entries(b.protocols)) {
-      const label = protoLabels[pk] || pk;
-      const supported = info.supported;
-      const statusText = info.status ? 'HTTP ' + info.status : '';
-      const timeText = info.responseTime ? info.responseTime + 'ms' : '';
+      var label = protoLabels[pk] || pk;
+      var supported = info.supported;
+      var statusText = info.status ? 'HTTP ' + info.status : '';
+      var timeText = info.responseTime ? info.responseTime + 'ms' : '';
 
       html += '<div class="proto-card ' + (supported ? 'ok' : 'no') + '">' +
         '<div class="proto-name">' + label +
@@ -1549,10 +1550,10 @@ function renderDetectResults(data, url, apiKey, customPath) {
     '</div>';
 
     // Models
-    html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)" id="models-section-' + i + '">' +
+    html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)" id="models-section-' + bi + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
         '<span class="caption-uppercase">模型' + (b.models && b.models.models ? ' (' + b.models.models.length + ')' : '') + '</span>' +
-        '<button class="btn btn-small" onclick="fetchModelsForBase(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\',\\'models-section-' + i + '\\')">获取模型</button>' +
+        '<button class="btn btn-small" onclick="fetchModelsForBase(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\',\\'models-section-' + bi + '\\')">获取模型</button>' +
       '</div>';
     if (b.models && b.models.models && b.models.models.length > 0) {
       html += '<div class="models-grid">';
@@ -2418,14 +2419,15 @@ async function deleteEndpoint(id) {
 async function fetchModelsForEndpoint(endpointId, url) {
   var grid = document.getElementById('epModelsGrid');
   if (!grid) return;
+  var originalHtml = grid.innerHTML;
   grid.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> 获取中...</div>';
 
   try {
     var data = await API.get('/api/models?url=' + encodeURIComponent(url));
     var models = data.models || [];
     if (models.length === 0) {
-      grid.innerHTML = '<div style="color:var(--muted);font-size:13px">未获取到模型</div>';
-      showToast('未获取到模型列表', 'info');
+      grid.innerHTML = originalHtml;
+      showToast('未获取到模型列表，已保留现有模型', 'info');
       return;
     }
 
@@ -2446,7 +2448,7 @@ async function fetchModelsForEndpoint(endpointId, url) {
 
     showToast('获取到 ' + models.length + ' 个模型，已合并');
   } catch (e) {
-    grid.innerHTML = '<div style="color:var(--error);font-size:13px">获取失败: ' + escapeHtml(e.message) + '</div>';
+    grid.innerHTML = originalHtml;
     showToast('获取失败: ' + e.message, 'error');
   }
 }
