@@ -227,16 +227,16 @@ export async function runDetection(inputUrl, apiKey) {
   for (let idx = 0; idx < discovered.length; idx++) {
     const d = discovered[idx];
     let protocols = null;
-
-    if (idx === 0) {
-      protocols = await detectProtocols(d.base, apiKey);
-    }
-
-    const supported = protocols ? Object.values(protocols).some((p) => p.supported) : false;
     let models = null;
-    if (supported && !foundSupported) {
-      foundSupported = true;
-      models = await detectModels(d.base, apiKey, protocols);
+
+    if (!foundSupported) {
+      protocols = await detectProtocols(d.base, apiKey);
+      const supported = Object.values(protocols).some((p) => p.supported);
+      if (supported) {
+        foundSupported = true;
+        recommendedBase = d.base;
+        models = await detectModels(d.base, apiKey, protocols);
+      }
     }
 
     if (!protocols) {
@@ -250,17 +250,10 @@ export async function runDetection(inputUrl, apiKey) {
     allBases.push({ base: d.base, status: d.status, protocols, models });
   }
 
-  const withSupport = allBases.filter((b) => Object.values(b.protocols).some((p) => p.supported));
-  if (withSupport.length > 0) {
-    recommendedBase = withSupport[0].base;
-  }
-
-  const anySupported = withSupport.length > 0;
-
   return {
-    success: anySupported,
+    success: foundSupported,
     recommendedBase,
-    warning: anySupported ? undefined : "发现端点但未检测到支持的协议",
+    warning: foundSupported ? undefined : "发现端点但未检测到支持的协议",
     allBases,
   };
 }
