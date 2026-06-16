@@ -599,6 +599,7 @@ textarea.text-input {
   animation: spin 0.6s linear infinite;
 }
 
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -2398,8 +2399,8 @@ async function executeImport() {
   if (progressArea) progressArea.style.display = '';
 
   if (progressText) progressText.textContent = '正在导入...';
-  if (progressCount) progressCount.textContent = '?/' + total;
-  if (progressBar) progressBar.style.width = '50%';
+  if (progressCount) progressCount.textContent = '.../' + total;
+  if (progressBar) { progressBar.style.width = '60%'; progressBar.style.animation = 'pulse 1s infinite'; }
 
   try {
     var result = await API.post('/api/import', { items: items });
@@ -2409,8 +2410,9 @@ async function executeImport() {
     skipped = items.length;
   }
 
-  if (progressBar) progressBar.style.width = '100%';
+  if (progressBar) { progressBar.style.width = '100%'; progressBar.style.animation = ''; }
   if (progressText) progressText.textContent = '导入完成';
+  if (progressCount) progressCount.textContent = imported + '/' + total;
 
   // Save file to R2 if storage enabled
   try {
@@ -2427,8 +2429,6 @@ async function executeImport() {
 }
 
 async function saveImportFile(items, importedRows) {
-  var cb = document.getElementById('setEnableImportStorage');
-  if (!cb || !cb.checked || cb.dataset.hasBucket !== 'true') return;
   var fileInput = document.getElementById('importFile');
   var file = fileInput?.files?.[0];
   if (!file) return;
