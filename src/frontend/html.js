@@ -1669,7 +1669,7 @@ function renderDashboard() {
         '</select>' +
         '<div style="position:relative;max-width:180px;flex:1">' +
           '<input type="text" id="filterModel" class="text-input" placeholder="模型 ID 筛选" style="width:100%" onfocus="showModelDropdown()" oninput="filterModelDropdown()" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
-          '<div id="modelDropdown" class="key-dropdown" style="display:none;left:0;right:0;top:100%;margin-top:4px;max-height:240px;overflow-y:auto"></div>' +
+          '<div id="modelDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:240px;overflow-y:auto;background:var(--surface-card);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200"></div>' +
         '</div>' +
         '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
         '<button class="btn btn-secondary" onclick="resetDashFilters()">重置</button>' +
@@ -1717,7 +1717,7 @@ function showModelDropdown() {
   var dd = document.getElementById('modelDropdown');
   if (!dd) return;
   renderModelDropdownItems(allDashModels);
-  dd.style.display = '';
+  dd.style.display = 'block';
   setTimeout(function() {
     document.addEventListener('click', function _close(e) {
       if (!dd.contains(e.target) && e.target.id !== 'filterModel') {
@@ -1735,7 +1735,7 @@ function filterModelDropdown() {
   var q = inp.value.trim().toLowerCase();
   var filtered = q ? allDashModels.filter(function(m) { return m.toLowerCase().includes(q); }) : allDashModels;
   renderModelDropdownItems(filtered);
-  dd.style.display = '';
+  dd.style.display = 'block';
 }
 
 function renderModelDropdownItems(models) {
