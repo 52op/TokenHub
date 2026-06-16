@@ -193,6 +193,9 @@ export default {
     if (path === "/api/export/9router" && request.method === "GET") {
       return exportRoute.handleExport9router(request, env);
     }
+    if (path === "/api/export/ccswitch-data" && request.method === "GET") {
+      return exportRoute.handleExportCCSwitchData(request, env);
+    }
 
     return new Response("Not Found", { status: 404 });
   },
