@@ -2174,16 +2174,32 @@ function handleImportFileJSON(file) {
   reader.readAsText(file);
 }
 
+var SQL_CDNS = [
+  'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js',
+  'https://unpkg.com/sql.js@1.10.3/dist/sql-wasm.js',
+];
+
 function loadSqlJs() {
   return new Promise(function(resolve, reject) {
     if (window.SQL) return resolve(window.SQL);
-    var script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js';
-    script.onload = function() {
-      initSqlJs().then(function(SQL) { resolve(SQL); }).catch(reject);
-    };
-    script.onerror = function() { reject(new Error('加载 sql.js 失败')); };
-    document.head.appendChild(script);
+    var idx = -1;
+    function tryNext() {
+      idx++;
+      if (idx >= SQL_CDNS.length) { reject(new Error('所有 CDN 均失败')); return; }
+      var script = document.createElement('script');
+      script.src = SQL_CDNS[idx];
+      script.onload = function() {
+        initSqlJs({
+          locateFile: function(file) {
+            var base = SQL_CDNS[idx].substring(0, SQL_CDNS[idx].lastIndexOf('/'));
+            return base + '/' + file;
+          }
+        }).then(function(SQL) { resolve(SQL); }).catch(tryNext);
+      };
+      script.onerror = tryNext;
+      document.head.appendChild(script);
+    }
+    tryNext();
   });
 }
 
