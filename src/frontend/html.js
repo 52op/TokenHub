@@ -1308,6 +1308,74 @@ async function handleLogout() {
   location.href = '/';
 }
 
+var PATH_SUGGESTIONS = [
+  { path: '/chat/completions', label: '聊天补全 (OpenAI Chat)', protocol: 'openai_chat' },
+  { path: '/responses', label: 'Responses (OpenAI Responses)', protocol: 'openai_responses' },
+  { path: '/messages', label: '消息 (Anthropic)', protocol: 'anthropic' },
+  { path: '/v1/chat/completions', label: 'v1 聊天补全', protocol: 'openai_chat' },
+  { path: '/v1/models', label: '模型列表', protocol: '' },
+  { path: '/embeddings', label: '向量嵌入', protocol: 'openai_chat' },
+  { path: '/completions', label: '传统补全', protocol: 'openai_chat' },
+  { path: '/v1/completions', label: 'v1 传统补全', protocol: 'openai_chat' },
+];
+
+function showPathDropdown() {
+  var dd = document.getElementById('pathDropdown');
+  if (!dd) return;
+  renderPathDropdown(PATH_SUGGESTIONS);
+  dd.style.display = 'block';
+  setTimeout(function() {
+    document.addEventListener('click', function _close(e) {
+      if (!dd.contains(e.target) && e.target.id !== 'detectPath') {
+        dd.style.display = 'none';
+        document.removeEventListener('click', _close);
+      }
+    });
+  }, 10);
+}
+
+function hidePathDropdown() {
+  var dd = document.getElementById('pathDropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function filterPathDropdown() {
+  var inp = document.getElementById('detectPath');
+  var dd = document.getElementById('pathDropdown');
+  if (!inp || !dd) return;
+  var q = inp.value.trim().toLowerCase();
+  var filtered = q ? PATH_SUGGESTIONS.filter(function(s) {
+    return s.path.toLowerCase().includes(q) || s.label.toLowerCase().includes(q);
+  }) : PATH_SUGGESTIONS;
+  renderPathDropdown(filtered);
+  dd.style.display = 'block';
+}
+
+function renderPathDropdown(items) {
+  var dd = document.getElementById('pathDropdown');
+  if (!dd) return;
+  if (items.length === 0) {
+    dd.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--muted)">无匹配路径</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var s = items[i];
+    html += '<div class="key-dropdown-item" style="cursor:pointer" onclick="selectPath(\\'' + escapeHtml(s.path) + '\\')">' +
+      '<div style="font-family:var(--font-mono);font-size:13px">' + escapeHtml(s.path) + '</div>' +
+      '<div style="font-size:11px;color:var(--muted)">' + escapeHtml(s.label) + '</div>' +
+    '</div>';
+  }
+  dd.innerHTML = html;
+}
+
+function selectPath(path) {
+  var inp = document.getElementById('detectPath');
+  if (inp) inp.value = path;
+  hidePathDropdown();
+  saveDetectForm();
+}
+
 function renderDetectPage() {
   return '<div class="container">' +
     '<div class="hero-band">' +
@@ -1322,7 +1390,10 @@ function renderDetectPage() {
         '<div style="position:relative;flex:1">' +
           '<input type="password" id="detectKey" class="text-input" placeholder="API Key（可选）" oninput="saveDetectForm();clearKeyEditIcon()" onfocus="handleKeyFocus()" onblur="handleKeyBlur()" style="width:100%" />' +
         '</div>' +
-        '<input type="text" id="detectPath" class="text-input" placeholder="自定义路径（可选）如 /v1/chat/completions" oninput="saveDetectForm()" />' +
+        '<div style="position:relative;flex:1">' +
+          '<input type="text" id="detectPath" class="text-input" placeholder="自定义路径（可选）如 /v1/chat/completions" oninput="saveDetectForm();filterPathDropdown()" onfocus="showPathDropdown()" onkeydown="if(event.key===\\'Escape\\')hidePathDropdown()" style="width:100%" />' +
+          '<div id="pathDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:200px;overflow-y:auto;background:var(--surface-card);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200"></div>' +
+        '</div>' +
       '</div>' +
       '<div class="input-row" style="margin-top:8px">' +
         '<input type="text" id="detectModel" class="text-input" placeholder="模型 ID（可选）如 gpt-4o" oninput="saveDetectForm()" />' +
@@ -1478,12 +1549,13 @@ function renderDetectResults(data, url, apiKey, customPath) {
     '</div>';
 
     // Models
+    html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)" id="models-section-' + i + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<span class="caption-uppercase">模型' + (b.models && b.models.models ? ' (' + b.models.models.length + ')' : '') + '</span>' +
+        '<button class="btn btn-small" onclick="fetchModelsForBase(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\',\\'models-section-' + i + '\\')">获取模型</button>' +
+      '</div>';
     if (b.models && b.models.models && b.models.models.length > 0) {
-      html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)">' +
-        '<div class="caption-uppercase" style="margin-bottom:8px">模型 (' + b.models.models.length + ')' +
-        ' <span style="font-weight:400;color:var(--muted)">点击 [验证] 测试可用性</span>' +
-        '</div>' +
-        '<div class="models-grid">';
+      html += '<div class="models-grid">';
       for (const m of b.models.models) {
         const mid = typeof m === 'string' ? m : (m.id || '');
         html += '<div class="model-chip ' + (m.supported !== false ? 'available' : '') + '">' +
@@ -1491,8 +1563,11 @@ function renderDetectResults(data, url, apiKey, customPath) {
           ' <button class="btn-small-ghost" onclick="quickVerifyModel(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(mid) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
         '</div>';
       }
-      html += '</div></div>';
+      html += '</div>';
+    } else {
+      html += '<div style="color:var(--muted);font-size:13px">点击「获取模型」自动检测可用模型</div>';
     }
+    html += '</div>';
 
     html += '</div>';
   }
@@ -1608,6 +1683,50 @@ async function quickSend(baseUrl, apiKey) {
     '</div>';
   } catch (e) {
     el.innerHTML = '<div class="result-error">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function fetchModelsForBase(baseUrl, apiKey, sectionId) {
+  var section = document.getElementById(sectionId);
+  if (!section) return;
+  var btn = section.querySelector('.btn-small');
+  if (btn) { btn.disabled = true; btn.textContent = '获取中...'; }
+
+  try {
+    var data = await API.get('/api/models?url=' + encodeURIComponent(baseUrl) + '&apiKey=' + encodeURIComponent(apiKey));
+    var models = data.models || [];
+    if (models.length === 0) {
+      showToast('未获取到模型列表', 'info');
+      if (btn) { btn.disabled = false; btn.textContent = '获取模型'; }
+      return;
+    }
+
+    var grid = section.querySelector('.models-grid');
+    if (!grid) {
+      var existing = section.querySelector('[style*="color:var(--muted)"]');
+      if (existing) existing.remove();
+      grid = document.createElement('div');
+      grid.className = 'models-grid';
+      section.appendChild(grid);
+    }
+
+    var html = '';
+    for (var i = 0; i < models.length; i++) {
+      html += '<div class="model-chip available">' +
+        escapeHtml(models[i]) +
+        ' <button class="btn-small-ghost" onclick="quickVerifyModel(\\'' + escapeHtml(baseUrl) + '\\',\\'' + escapeHtml(models[i]) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
+      '</div>';
+    }
+    grid.innerHTML = html;
+
+    var title = section.querySelector('.caption-uppercase');
+    if (title) title.textContent = '模型 (' + models.length + ')';
+
+    showToast('获取到 ' + models.length + ' 个模型');
+    if (btn) { btn.disabled = false; btn.textContent = '刷新模型'; }
+  } catch (e) {
+    showToast('获取失败: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '获取模型'; }
   }
 }
 
@@ -2188,9 +2307,12 @@ async function loadEndpointDetail(id) {
     html += '<div class="card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
         '<span class="caption-uppercase">模型 (' + models.length + ')</span>' +
-        '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="toggleAddForm(\\'addModelForm\\')" title="添加模型">+</span>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<button class="btn btn-small" onclick="fetchModelsForEndpoint(\\'' + ep.id + '\\',\\'' + escapeHtml(ep.url) + '\\')">自动获取</button>' +
+          '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="toggleAddForm(\\'addModelForm\\')" title="手动添加模型">+</span>' +
+        '</div>' +
       '</div>' +
-      (models.length > 0 ? '<div class="models-grid">' + modelChips + '</div>' : '<div style="color:var(--muted);font-size:13px">暂无模型</div>') +
+      '<div id="epModelsGrid">' + (models.length > 0 ? '<div class="models-grid">' + modelChips + '</div>' : '<div style="color:var(--muted);font-size:13px">暂无模型</div>') + '</div>' +
       '<div id="addModelForm" style="display:none;margin-top:10px">' +
         '<div class="input-row">' +
           '<input type="text" id="newModelInput" class="text-input" placeholder="模型 ID" style="max-width:300px" />' +
@@ -2291,6 +2413,42 @@ async function deleteEndpoint(id) {
   if (!confirm('确定删除此接口及所有 Key？')) return;
   await API.del('/api/endpoints/' + id);
   navigate('/app');
+}
+
+async function fetchModelsForEndpoint(endpointId, url) {
+  var grid = document.getElementById('epModelsGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> 获取中...</div>';
+
+  try {
+    var data = await API.get('/api/models?url=' + encodeURIComponent(url));
+    var models = data.models || [];
+    if (models.length === 0) {
+      grid.innerHTML = '<div style="color:var(--muted);font-size:13px">未获取到模型</div>';
+      showToast('未获取到模型列表', 'info');
+      return;
+    }
+
+    var epData = await API.get('/api/endpoints/' + endpointId);
+    var existing = (function() { try { var m = JSON.parse(epData.endpoint.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    var merged = [...new Set([...existing, ...models])];
+    await API.put('/api/endpoints/' + endpointId, { models: merged });
+
+    var html = '<div class="models-grid">';
+    for (var i = 0; i < merged.length; i++) {
+      html += '<span class="model-chip available">' + escapeHtml(merged[i]) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\\'' + endpointId + '\\',\\'' + escapeHtml(merged[i]) + '\\')">&times;</span></span>';
+    }
+    html += '</div>';
+    grid.innerHTML = html;
+
+    var title = grid.closest('.card')?.querySelector('.caption-uppercase');
+    if (title) title.textContent = '模型 (' + merged.length + ')';
+
+    showToast('获取到 ' + models.length + ' 个模型，已合并');
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--error);font-size:13px">获取失败: ' + escapeHtml(e.message) + '</div>';
+    showToast('获取失败: ' + e.message, 'error');
+  }
 }
 
 async function addModelToEndpoint(endpointId) {

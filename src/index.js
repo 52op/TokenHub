@@ -11,6 +11,7 @@ import * as userRoute from "./routes/user.js";
 import * as testRoute from "./routes/test.js";
 import * as chatRoute from "./routes/chat.js";
 import * as importRoute from "./routes/import.js";
+import * as modelsRoute from "./routes/models.js";
 import { renderApp, renderSSOCallback } from "./frontend/html.js";
 
 export default {
@@ -162,6 +163,11 @@ export default {
     }
     if (path === "/api/import" && request.method === "POST") {
       return importRoute.handleImport(request, env);
+    }
+
+    // Models
+    if (path === "/api/models" && request.method === "GET") {
+      return modelsRoute.handleGetModels(request, env);
     }
 
     return new Response("Not Found", { status: 404 });
