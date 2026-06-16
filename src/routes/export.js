@@ -19,6 +19,16 @@ function safeJsonParse(str, fallback) {
   try { const v = JSON.parse(str); return v; } catch { return fallback; }
 }
 
+function groupKeysByEndpoint(endpoints, keys) {
+  const keyMap = {};
+  for (const k of keys.results || []) {
+    if (!k.key_value) continue;
+    if (!keyMap[k.endpoint_id]) keyMap[k.endpoint_id] = [];
+    keyMap[k.endpoint_id].push(k);
+  }
+  return keyMap;
+}
+
 export async function handleExport9router(request, env) {
   const user = await requireUser(request, env);
   if (!user) return errorResponse("未登录", 401);
@@ -27,14 +37,20 @@ export async function handleExport9router(request, env) {
     "SELECT * FROM endpoints WHERE user_id = ? ORDER BY name"
   ).bind(user.id).all();
 
+  const ids = (eps.results || []).map(e => e.id);
+  if (ids.length === 0) return jsonResponse({ providerConnections: [], modelAliases: [] });
+
+  const placeholders = ids.map(() => "?").join(",");
+  const keys = await env.DB.prepare(
+    `SELECT * FROM api_keys WHERE endpoint_id IN (${placeholders}) ORDER BY created_at`
+  ).bind(...ids).all();
+
+  const keyMap = groupKeysByEndpoint(eps, keys);
   const connections = [];
   const modelAliases = [];
 
   for (const ep of (eps.results || [])) {
-    const keys = await env.DB.prepare(
-      "SELECT * FROM api_keys WHERE endpoint_id = ? ORDER BY created_at"
-    ).bind(ep.id).all();
-    const keyList = (keys.results || []).filter(k => k.key_value);
+    const keyList = keyMap[ep.id] || [];
     if (keyList.length === 0) continue;
 
     const protos = safeJsonParse(ep.protocols, {});
@@ -76,12 +92,19 @@ export async function handleExportCCSwitchData(request, env) {
     "SELECT * FROM endpoints WHERE user_id = ? ORDER BY name"
   ).bind(user.id).all();
 
+  const ids = (eps.results || []).map(e => e.id);
+  if (ids.length === 0) return jsonResponse({ endpoints: [] });
+
+  const placeholders = ids.map(() => "?").join(",");
+  const keys = await env.DB.prepare(
+    `SELECT * FROM api_keys WHERE endpoint_id IN (${placeholders}) ORDER BY created_at`
+  ).bind(...ids).all();
+
+  const keyMap = groupKeysByEndpoint(eps, keys);
   const result = [];
+
   for (const ep of (eps.results || [])) {
-    const keys = await env.DB.prepare(
-      "SELECT * FROM api_keys WHERE endpoint_id = ? ORDER BY created_at"
-    ).bind(ep.id).all();
-    const keyList = (keys.results || []).filter(k => k.key_value);
+    const keyList = keyMap[ep.id] || [];
     if (keyList.length === 0) continue;
 
     result.push({

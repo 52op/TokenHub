@@ -133,6 +133,9 @@ export default {
     if (path === "/api/health/history" && request.method === "GET") {
       return healthRoute.handleHistory(request, env);
     }
+    if (path === "/api/health/summary" && request.method === "GET") {
+      return healthRoute.handleSummary(request, env);
+    }
 
     // Admin
     if (path.startsWith("/api/admin/")) {

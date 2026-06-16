@@ -2397,18 +2397,16 @@ async function executeImport() {
   if (btn) { btn.disabled = true; btn.textContent = '导入中...'; }
   if (progressArea) progressArea.style.display = '';
 
-  for (var i = 0; i < items.length; i++) {
-    if (progressText) progressText.textContent = '正在导入: ' + (items[i].name || items[i].url);
-    if (progressCount) progressCount.textContent = (i + 1) + '/' + total;
-    if (progressBar) progressBar.style.width = Math.round((i / total) * 100) + '%';
+  if (progressText) progressText.textContent = '正在导入...';
+  if (progressCount) progressCount.textContent = '?/' + total;
+  if (progressBar) progressBar.style.width = '50%';
 
-    try {
-      var result = await API.post('/api/import', { items: [items[i]] });
-      imported += result.imported || 0;
-      skipped += result.skipped || 0;
-    } catch (e) {
-      skipped++;
-    }
+  try {
+    var result = await API.post('/api/import', { items: items });
+    imported = result.imported || 0;
+    skipped = result.skipped || 0;
+  } catch (e) {
+    skipped = items.length;
   }
 
   if (progressBar) progressBar.style.width = '100%';
@@ -2928,27 +2926,11 @@ async function loadHealthSummary() {
   var el = document.getElementById('healthSummary');
   if (!el) return;
   try {
-    var epData = await API.get('/api/endpoints?limit=100');
-    var endpoints = epData.endpoints || [];
-    var total = endpoints.length;
-    var alive = 0;
-    var totalRespTime = 0;
-    var respCount = 0;
-    var lastCheck = '';
-    for (var i = 0; i < endpoints.length; i++) {
-      var keysData = await API.get('/api/endpoints/' + endpoints[i].id + '/keys');
-      var keys = keysData.keys || [];
-      for (var j = 0; j < keys.length; j++) {
-        if (keys[j].last_status) alive++;
-        if (keys[j].last_response_time_ms) { totalRespTime += keys[j].last_response_time_ms; respCount++; }
-        if (keys[j].last_checked_at && keys[j].last_checked_at > lastCheck) lastCheck = keys[j].last_checked_at;
-      }
-    }
-    var avgResp = respCount > 0 ? Math.round(totalRespTime / respCount) : 0;
+    var data = await API.get('/api/health/summary');
     el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">' +
-      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:' + (alive > 0 ? 'var(--success)' : 'var(--muted)') + '">' + alive + '/' + total + '</div><div style="font-size:12px;color:var(--muted)">接口存活</div></div>' +
-      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:var(--ink)">' + (avgResp > 0 ? avgResp + 'ms' : '-') + '</div><div style="font-size:12px;color:var(--muted)">平均响应</div></div>' +
-      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:14px;font-weight:500;color:var(--ink)">' + (lastCheck ? formatTime(lastCheck) : '从未') + '</div><div style="font-size:12px;color:var(--muted)">最近检测</div></div>' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:' + (data.alive_keys > 0 ? 'var(--success)' : 'var(--muted)') + '">' + data.alive_keys + '/' + data.total_endpoints + '</div><div style="font-size:12px;color:var(--muted)">接口存活</div></div>' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:28px;font-weight:600;color:var(--ink)">' + (data.avg_response_time_ms > 0 ? data.avg_response_time_ms + 'ms' : '-') + '</div><div style="font-size:12px;color:var(--muted)">平均响应</div></div>' +
+      '<div class="card" style="text-align:center;padding:16px"><div style="font-size:14px;font-weight:500;color:var(--ink)">' + (data.last_checked_at ? formatTime(data.last_checked_at) : '从未') + '</div><div style="font-size:12px;color:var(--muted)">最近检测</div></div>' +
     '</div>';
   } catch (e) {
     el.innerHTML = '';
