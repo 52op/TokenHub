@@ -1230,6 +1230,18 @@ const API = {
   post(path, body) { return this.call('POST', path, body); },
   put(path, body) { return this.call('PUT', path, body); },
   del(path) { return this.call('DELETE', path); },
+  upload: async function(url, formData) {
+    var res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      var err = await res.json().catch(function() { return { error: res.statusText }; });
+      throw new Error(err.error || 'Upload failed');
+    }
+    return res.json();
+  },
 };
 
 function navigate(path) {
@@ -2398,11 +2410,31 @@ async function executeImport() {
   if (progressBar) progressBar.style.width = '100%';
   if (progressText) progressText.textContent = '导入完成';
 
+  // Save file to R2 if storage enabled
+  try {
+    await saveImportFile(items, imported);
+  } catch (e) {
+    // non-blocking
+  }
+
   showToast('导入完成: ' + imported + ' 个接口' + (skipped > 0 ? '，跳过 ' + skipped : ''));
   importParsedItems = [];
   var area = document.getElementById('importArea');
   if (area) area.style.display = 'none';
   await loadDashboard();
+}
+
+async function saveImportFile(items, importedRows) {
+  var cb = document.getElementById('setEnableImportStorage');
+  if (!cb || !cb.checked || cb.dataset.hasBucket !== 'true') return;
+  var fileInput = document.getElementById('importFile');
+  var file = fileInput?.files?.[0];
+  if (!file) return;
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('imported_rows', String(importedRows));
+  fd.append('file_type', window._importSource === 'cc' ? 'ccswitch' : '9router');
+  await API.upload('/api/import/save-file', fd);
 }
 
 async function deleteEndpointCard(id) {
@@ -2981,7 +3013,13 @@ function renderAdminPage() {
         '<div><label class="label">Favicon URL</label><input type="text" id="setSiteFavicon" class="text-input" placeholder="https://example.com/favicon.ico" /></div>' +
         '<div><label class="label">页脚文字</label><input type="text" id="setSiteFooter" class="text-input" placeholder="© 2026 TokenHub" /></div>' +
         '<div><label class="label">OG 图片（社交分享）</label><input type="text" id="setSiteOgImage" class="text-input" placeholder="https://example.com/og.png" /></div>' +
-        '<div style="margin-top:4px"><button class="btn btn-primary" onclick="saveSiteSettings()">保存设置</button></div>' +
+        '<div><label class="label">导入文件云存储</label>' +
+          '<div id="importStorageToggle" style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
+            '<label class="toggle"><input type="checkbox" id="setEnableImportStorage" onchange="toggleImportStorage()" /> <span>开启</span></label>' +
+            '<span id="importStorageStatus" style="font-size:12px;color:var(--muted)"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div style="margin-top:4px"><button class="btn btn-primary" onclick="saveSiteSettings()">保存设置</button>' + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="card" style="margin-top:16px">' +
@@ -2994,6 +3032,10 @@ function renderAdminPage() {
       '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">导出当前数据，可在 9router 或其他兼容工具中导入使用。导出的文件包含 API Key，请注意保管。</p>' +
       '<button class="btn btn-primary btn-small" onclick="export9router()">导出 9router JSON</button>' +
     '</div>' +
+    '<div class="card" style="margin-top:16px">' +
+      '<div class="caption-uppercase" style="margin-bottom:12px">导入文件</div>' +
+      '<div id="importedFilesList"></div>' +
+    '</div>' +
   '</div>';
 }
 
@@ -3005,6 +3047,14 @@ async function loadSiteSettings() {
     for (const [key, id] of Object.entries(fields)) {
       var el = document.getElementById(id);
       if (el) el.value = s[key] || '';
+    }
+    // Handle checkbox setting
+    var storageCb = document.getElementById('setEnableImportStorage');
+    if (storageCb) storageCb.checked = s.enable_import_storage === '1';
+    // Handle meta
+    if (data._meta) {
+      if (storageCb) storageCb.dataset.hasBucket = data._meta.hasImportBucket ? 'true' : 'false';
+      handleImportStorageToggle();
     }
   } catch (e) {}
 }
@@ -3020,12 +3070,15 @@ async function saveSiteSettings() {
     site_footer: document.getElementById('setSiteFooter')?.value || '',
     site_og_image: document.getElementById('setSiteOgImage')?.value || '',
   };
+  body.enable_import_storage = document.getElementById('setEnableImportStorage')?.checked ? '1' : '0';
   await API.put('/api/admin/settings', body);
   showToast('站点设置已保存');
 }
 
 async function loadAdminPage() {
   await loadSiteSettings();
+  loadImportedFiles();
+  handleImportStorageToggle();
   const el = document.getElementById('adminUserList');
   if (!el) return;
   const search = document.getElementById('adminSearch')?.value || '';
@@ -3073,6 +3126,77 @@ async function export9router() {
     showToast('导出成功: ' + data.providerConnections.length + ' 个连接', 'success');
   } catch (err) {
     showToast('导出失败: ' + err.message, 'error');
+  }
+}
+
+function toggleImportStorage() {
+  var cb = document.getElementById('setEnableImportStorage');
+  if (!cb) return;
+  if (!cb.dataset.hasBucket) {
+    showToast('未配置 R2 Bucket，无法开启', 'error');
+    cb.checked = false;
+    return;
+  }
+}
+
+async function loadImportedFiles() {
+  var el = document.getElementById('importedFilesList');
+  if (!el) return;
+  try {
+    var data = await API.get('/api/import/files?page=1&limit=20');
+    if (!data.files || data.files.length === 0) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0">暂无导入文件</div>';
+      return;
+    }
+    var html = '<table class="health-table"><tr><th>文件名</th><th>类型</th><th>大小</th><th>导入行数</th><th>时间</th><th>操作</th></tr>';
+    for (var i = 0; i < data.files.length; i++) {
+      var f = data.files[i];
+      var sizeStr = f.file_size > 1048576
+        ? (f.file_size / 1048576).toFixed(1) + ' MB'
+        : f.file_size > 1024
+          ? (f.file_size / 1024).toFixed(0) + ' KB'
+          : f.file_size + ' B';
+      var typeLabel = f.file_type === '9router' ? '9router' : 'CC-Switch';
+      html += '<tr>' +
+        '<td>' + escapeHtml(f.filename) + '</td>' +
+        '<td><span class="badge badge-green">' + typeLabel + '</span></td>' +
+        '<td>' + sizeStr + '</td>' +
+        '<td>' + f.imported_rows + '</td>' +
+        '<td style="font-size:12px;color:var(--muted)">' + escapeHtml(f.created_at || '') + '</td>' +
+        '<td>' +
+          '<a href="/api/import/files/' + f.id + '/download" class="btn btn-small" target="_blank">下载</a> ' +
+          '<button class="btn btn-small btn-danger" onclick="deleteImportedFile(\\'' + f.id + '\\')">删除</button>' +
+        '</td>' +
+      '</tr>';
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = '<div style="color:var(--danger);font-size:13px">加载失败: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function deleteImportedFile(fileId) {
+  if (!confirm('确定删除此文件？')) return;
+  try {
+    await API.del('/api/import/files/' + fileId);
+    showToast('已删除', 'success');
+    loadImportedFiles();
+  } catch (err) {
+    showToast('删除失败: ' + err.message, 'error');
+  }
+}
+
+function handleImportStorageToggle() {
+  var cb = document.getElementById('setEnableImportStorage');
+  var status = document.getElementById('importStorageStatus');
+  if (!cb || !status) return;
+  if (cb.dataset.hasBucket !== 'true') {
+    cb.disabled = true;
+    status.textContent = '未配置 R2 Bucket';
+  } else {
+    cb.disabled = false;
+    status.textContent = '';
   }
 }
 
