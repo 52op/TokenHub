@@ -10,6 +10,14 @@ export async function handleList(request, env, endpointId) {
   return jsonResponse({ keys: keys.results });
 }
 
+export async function handleGet(request, env, id) {
+  const user = await requireUser(request, env);
+  if (!user) return errorResponse("未登录", 401);
+  const key = await db.getKeyById(env, id, user.id);
+  if (!key) return errorResponse("未找到", 404);
+  return jsonResponse({ key_value: key.key_value });
+}
+
 export async function handleCreate(request, env, endpointId) {
   const user = await requireUser(request, env);
   if (!user) return errorResponse("未登录", 401);

@@ -110,6 +110,7 @@ export default {
     const keyMatch = path.match(/^\/api\/keys\/([^/]+)$/);
     if (keyMatch) {
       const id = keyMatch[1];
+      if (request.method === "GET") return keysRoute.handleGet(request, env, id);
       if (request.method === "PUT") return keysRoute.handleUpdate(request, env, id);
       if (request.method === "DELETE") return keysRoute.handleDelete(request, env, id);
     }

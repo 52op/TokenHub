@@ -2348,6 +2348,7 @@ async function loadEndpointDetail(id) {
         '<div class="key-info">' +
           '<span class="key-alias">' + escapeHtml(k.alias || '未命名') + '</span>' +
           '<span class="key-masked" style="font-family:var(--font-mono);color:var(--muted);font-size:13px">' + escapeHtml(k.key_masked) + '</span>' +
+          '<button class="btn-small-ghost" style="font-size:11px" onclick="copyKeyValue(\\'' + k.id + '\\')" title="复制完整 Key">复制</button>' +
           '<span class="key-status dot ' + (k.last_status ? 'dot-green' : 'dot-gray') + '" id="key-status-' + k.id + '"></span>' +
           '<span style="font-size:12px;color:var(--muted)" id="key-time-' + k.id + '">' + (k.last_checked_at ? formatTime(k.last_checked_at) : '未检测') + '</span>' +
         '</div>' +
@@ -2507,6 +2508,19 @@ async function addKey(endpointId) {
   document.getElementById('newKeyValue').value = '';
   document.getElementById('newKeyAlias').value = '';
   await loadEndpointDetail(endpointId);
+}
+
+async function copyKeyValue(keyId) {
+  try {
+    var data = await API.get('/api/keys/' + keyId);
+    if (data.key_value) {
+      navigator.clipboard.writeText(data.key_value).then(function() {
+        showToast('已复制');
+      });
+    }
+  } catch (e) {
+    showToast('复制失败: ' + e.message, 'error');
+  }
 }
 
 async function checkKey(keyId) {
