@@ -2989,6 +2989,11 @@ function renderAdminPage() {
       '<input type="text" id="adminSearch" class="text-input" placeholder="搜索用户..." oninput="loadAdminPage()" />' +
     '</div>' +
     '<div id="adminUserList"></div>' +
+    '<div class="card" style="margin-top:16px">' +
+      '<div class="caption-uppercase" style="margin-bottom:12px">数据导出</div>' +
+      '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">导出当前数据，可在 9router 或其他兼容工具中导入使用。导出的文件包含 API Key，请注意保管。</p>' +
+      '<button class="btn btn-primary btn-small" onclick="export9router()">导出 9router JSON</button>' +
+    '</div>' +
   '</div>';
 }
 
@@ -3046,6 +3051,28 @@ async function loadAdminPage() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function export9router() {
+  try {
+    var data = await API.get('/api/export/9router');
+    if (!data.providerConnections || data.providerConnections.length === 0) {
+      showToast('没有可导出的数据', 'info');
+      return;
+    }
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = '9router-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('导出成功: ' + data.providerConnections.length + ' 个连接', 'success');
+  } catch (err) {
+    showToast('导出失败: ' + err.message, 'error');
   }
 }
 
