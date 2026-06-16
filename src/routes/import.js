@@ -50,6 +50,18 @@ export async function handleParse(request, env) {
 
   const body = await request.json();
   const connections = body.connections || [];
+  const modelAliases = body.modelAliases || {};
+
+  const modelsByProvider = {};
+  for (const [alias, val] of Object.entries(modelAliases)) {
+    const idx = val.indexOf("/");
+    if (idx < 0) continue;
+    const provider = val.substring(0, idx);
+    const modelId = val.substring(idx + 1);
+    if (!modelsByProvider[provider]) modelsByProvider[provider] = [];
+    if (!modelsByProvider[provider].includes(modelId)) modelsByProvider[provider].push(modelId);
+  }
+
   const results = [];
 
   for (const conn of connections) {
@@ -59,6 +71,12 @@ export async function handleParse(request, env) {
     const keyValue = conn.apiKey || conn.accessToken || "";
     if (!keyValue) continue;
 
+    const provider = conn.provider || "";
+    const models = modelsByProvider[provider] || [];
+    if (conn.defaultModel && !models.includes(conn.defaultModel)) {
+      models.unshift(conn.defaultModel);
+    }
+
     results.push({
       id: conn.id,
       name: conn.name || conn.email || "",
@@ -66,7 +84,8 @@ export async function handleParse(request, env) {
       protocol: resolved.protocol,
       keyValue: keyValue,
       defaultModel: conn.defaultModel || "",
-      provider: conn.provider || "",
+      models: models,
+      provider: provider,
       isActive: conn.isActive !== false,
       testStatus: conn.testStatus || "",
     });
@@ -91,7 +110,7 @@ export async function handleImport(request, env) {
 
     const protocols = {};
     if (item.protocol) protocols[item.protocol] = true;
-    const models = item.defaultModel ? [item.defaultModel] : [];
+    const models = (item.models && item.models.length > 0) ? item.models : (item.defaultModel ? [item.defaultModel] : []);
 
     try {
       const ep = await db.createEndpoint(env, user.id, {

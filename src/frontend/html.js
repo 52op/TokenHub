@@ -1775,11 +1775,12 @@ function handleImportFile(input) {
     try {
       var json = JSON.parse(e.target.result);
       var connections = json.providerConnections || [];
+      var modelAliases = json.modelAliases || {};
       if (connections.length === 0) {
         showToast('未找到 providerConnections 数据', 'error');
         return;
       }
-      var data = await API.post('/api/import/parse', { connections: connections });
+      var data = await API.post('/api/import/parse', { connections: connections, modelAliases: modelAliases });
       importParsedItems = data.items || [];
       renderImportPreview(importParsedItems);
     } catch (err) {
@@ -1803,15 +1804,17 @@ function renderImportPreview(items) {
       '<button class="btn btn-primary btn-small" onclick="executeImport()">导入选中</button>' +
     '</div>' +
     '<div style="max-height:400px;overflow-y:auto">' +
-    '<table class="health-table"><tr><th style="width:30px">选</th><th>名称</th><th>URL</th><th>协议</th><th>Key</th><th>状态</th></tr>';
+    '<table class="health-table"><tr><th style="width:30px">选</th><th>名称</th><th>URL</th><th>协议</th><th>Key</th><th>模型</th><th>状态</th></tr>';
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
+    var modelCount = (it.models && it.models.length > 0) ? it.models.length : (it.defaultModel ? 1 : 0);
     html += '<tr>' +
       '<td><input type="checkbox" class="import-cb" data-index="' + i + '" checked /></td>' +
       '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(it.name) + '</td>' +
       '<td class="cell-url" style="max-width:250px">' + escapeHtml(it.url) + '</td>' +
       '<td><span class="badge badge-green">' + (protoLabels[it.protocol] || it.protocol) + '</span></td>' +
       '<td style="font-family:var(--font-mono);font-size:12px">' + escapeHtml(it.keyValue.substring(0, 8)) + '...</td>' +
+      '<td>' + modelCount + '</td>' +
       '<td><span class="dot ' + (it.testStatus === 'active' ? 'dot-green' : 'dot-gray') + '"></span></td>' +
     '</tr>';
   }
