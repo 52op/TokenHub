@@ -2258,7 +2258,7 @@ function parseCCSwitchData(db) {
 
     items.push({
       name: name,
-      url: url.replace(/\/+$/, ''),
+      url: url.replace(/[/]+$/, ''),
       protocol: protocol,
       keyValue: keyValue,
       defaultModel: uniqueModels.length > 0 ? uniqueModels[0] : '',
