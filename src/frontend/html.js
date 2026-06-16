@@ -1844,6 +1844,15 @@ function renderImportPreview(items) {
   }
   var protoLabels = { openai_chat: 'Chat', openai_responses: 'Responses', anthropic: 'Anthropic' };
   var html = '<div style="margin-top:12px">' +
+    '<div id="importProgress" style="display:none;margin-bottom:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:13px;color:var(--muted)">' +
+        '<span id="importProgressText">导入中...</span>' +
+        '<span id="importProgressCount">0/0</span>' +
+      '</div>' +
+      '<div style="background:var(--hairline);border-radius:4px;height:6px;overflow:hidden">' +
+        '<div id="importProgressBar" style="height:100%;background:var(--primary);border-radius:4px;width:0%;transition:width 0.2s"></div>' +
+      '</div>' +
+    '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
       '<label class="toggle"><input type="checkbox" id="importSelectAll" onchange="toggleImportSelectAll()" checked /> <span>全选 (' + items.length + ')</span></label>' +
       '<button class="btn btn-primary btn-small" onclick="executeImport()">导入选中</button>' +
@@ -1880,16 +1889,42 @@ async function executeImport() {
     var idx = parseInt(cb.dataset.index);
     if (importParsedItems[idx]) items.push(importParsedItems[idx]);
   });
-  try {
-    var result = await API.post('/api/import', { items: items });
-    showToast('导入完成: ' + result.imported + ' 个接口' + (result.skipped > 0 ? '，跳过 ' + result.skipped : ''));
-    importParsedItems = [];
-    var area = document.getElementById('importArea');
-    if (area) area.style.display = 'none';
-    await loadDashboard();
-  } catch (e) {
-    showToast('导入失败: ' + e.message, 'error');
+
+  var total = items.length;
+  var imported = 0;
+  var skipped = 0;
+
+  var btn = document.querySelector('#importPreview .btn-primary');
+  var progressArea = document.getElementById('importProgress');
+  var progressText = document.getElementById('importProgressText');
+  var progressCount = document.getElementById('importProgressCount');
+  var progressBar = document.getElementById('importProgressBar');
+
+  if (btn) { btn.disabled = true; btn.textContent = '导入中...'; }
+  if (progressArea) progressArea.style.display = '';
+
+  for (var i = 0; i < items.length; i++) {
+    if (progressText) progressText.textContent = '正在导入: ' + (items[i].name || items[i].url);
+    if (progressCount) progressCount.textContent = (i + 1) + '/' + total;
+    if (progressBar) progressBar.style.width = Math.round((i / total) * 100) + '%';
+
+    try {
+      var result = await API.post('/api/import', { items: [items[i]] });
+      imported += result.imported || 0;
+      skipped += result.skipped || 0;
+    } catch (e) {
+      skipped++;
+    }
   }
+
+  if (progressBar) progressBar.style.width = '100%';
+  if (progressText) progressText.textContent = '导入完成';
+
+  showToast('导入完成: ' + imported + ' 个接口' + (skipped > 0 ? '，跳过 ' + skipped : ''));
+  importParsedItems = [];
+  var area = document.getElementById('importArea');
+  if (area) area.style.display = 'none';
+  await loadDashboard();
 }
 
 async function deleteEndpointCard(id) {
