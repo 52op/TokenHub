@@ -1501,8 +1501,16 @@ function renderDetectResults(data, url, apiKey, customPath) {
       '<div class="best-base-url">' + escapeHtml(data.recommendedBase) + '</div></div>';
   }
 
-  for (var bi = 0; bi < (data.allBases || []).length; bi++) {
-    var b = data.allBases[bi];
+  var allBases = (data.allBases || []).slice().sort(function(a, b) {
+    var aSupport = Object.values(a.protocols || {}).some(function(p) { return p.supported; });
+    var bSupport = Object.values(b.protocols || {}).some(function(p) { return p.supported; });
+    if (aSupport && !bSupport) return -1;
+    if (!aSupport && bSupport) return 1;
+    return 0;
+  });
+
+  for (var bi = 0; bi < allBases.length; bi++) {
+    var b = allBases[bi];
     html += '<div class="card">';
     if (isProbe && b.modelVerified) {
       html += '<div style="margin-bottom:12px;font-size:13px;color:' + (b.modelVerified.ok ? 'var(--success)' : 'var(--error)') + '">模型验证: HTTP ' + b.modelVerified.status + (b.modelVerified.ok ? ' ✓' : ' ✗') + '</div>';
@@ -1537,16 +1545,16 @@ function renderDetectResults(data, url, apiKey, customPath) {
     // Quick send row — always show all 3 protocol options
     html += '<div class="quick-test" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)">' +
       '<div class="input-row" style="gap:6px">' +
-        '<select id="quickProto" class="text-input" style="max-width:160px">' +
+        '<select class="text-input" style="max-width:160px" id="quickProto-' + bi + '">' +
           '<option value="openai_chat">OpenAI Chat</option>' +
           '<option value="anthropic">Anthropic</option>' +
           '<option value="openai_responses">OpenAI Responses</option>' +
         '</select>' +
-        '<input type="text" id="quickModel" class="text-input" placeholder="模型 ID" style="max-width:180px" />' +
-        '<input type="text" id="quickMsg" class="text-input" placeholder="输入消息" />' +
-        '<button class="btn btn-primary btn-small" onclick="quickSend(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\')">发送</button>' +
+        '<input type="text" class="text-input" placeholder="模型 ID" style="max-width:180px" id="quickModel-' + bi + '" />' +
+        '<input type="text" class="text-input" placeholder="输入消息" id="quickMsg-' + bi + '" />' +
+        '<button class="btn btn-primary btn-small" onclick="quickSend(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(apiKey) + '\\',' + bi + ')">发送</button>' +
       '</div>' +
-      '<div id="quickResult" class="test-result"></div>' +
+      '<div id="quickResult-' + bi + '" class="test-result"></div>' +
     '</div>';
 
     // Models
@@ -1559,9 +1567,9 @@ function renderDetectResults(data, url, apiKey, customPath) {
       html += '<div class="models-grid">';
       for (const m of b.models.models) {
         const mid = typeof m === 'string' ? m : (m.id || '');
-        html += '<div class="model-chip ' + (m.supported !== false ? 'available' : '') + '">' +
+        html += '<div class="model-chip ' + (m.supported !== false ? 'available' : '') + '" onclick="fillQuickModel(\\'' + escapeHtml(mid) + '\\',' + bi + ')" style="cursor:pointer">' +
           escapeHtml(mid) +
-          ' <button class="btn-small-ghost" onclick="quickVerifyModel(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(mid) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
+          ' <button class="btn-small-ghost" onclick="event.stopPropagation();quickVerifyModel(\\'' + escapeHtml(b.base) + '\\',\\'' + escapeHtml(mid) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
         '</div>';
       }
       html += '</div>';
@@ -1665,14 +1673,20 @@ async function quickTestProtocol(baseUrl, protocol, apiKey) {
   }
 }
 
-async function quickSend(baseUrl, apiKey) {
-  const model = document.getElementById('quickModel').value.trim();
-  const msg = document.getElementById('quickMsg').value.trim();
-  const protocol = document.getElementById('quickProto').value;
+function fillQuickModel(model, bi) {
+  var el = document.getElementById('quickModel-' + bi);
+  if (el) el.value = model;
+}
+
+async function quickSend(baseUrl, apiKey, bi) {
+  bi = bi || 0;
+  var model = document.getElementById('quickModel-' + bi)?.value.trim();
+  var msg = document.getElementById('quickMsg-' + bi)?.value.trim();
+  var protocol = document.getElementById('quickProto-' + bi)?.value || 'openai_chat';
   if (!model || !msg) return showToast('请输入模型 ID 和消息', 'info');
-  const pathMap = { openai_chat: '/chat/completions', openai_responses: '/responses', anthropic: '/messages' };
-  const fullUrl = baseUrl.replace(/\\/+$/, '') + (pathMap[protocol] || '/chat/completions');
-  const el = document.getElementById('quickResult');
+  var pathMap = { openai_chat: '/chat/completions', openai_responses: '/responses', anthropic: '/messages' };
+  var fullUrl = baseUrl.replace(/\\/+$/, '') + (pathMap[protocol] || '/chat/completions');
+  var el = document.getElementById('quickResult-' + bi);
   el.innerHTML = '<span class="spinner"></span> 发送中...';
   try {
     const data = await API.post('/api/test/send', { url: fullUrl, apiKey, model, message: msg });
@@ -1712,10 +1726,11 @@ async function fetchModelsForBase(baseUrl, apiKey, sectionId) {
     }
 
     var html = '';
+    var bi = parseInt(sectionId.replace('models-section-', '')) || 0;
     for (var i = 0; i < models.length; i++) {
-      html += '<div class="model-chip available">' +
+      html += '<div class="model-chip available" onclick="fillQuickModel(\\'' + escapeHtml(models[i]) + '\\',' + bi + ')" style="cursor:pointer">' +
         escapeHtml(models[i]) +
-        ' <button class="btn-small-ghost" onclick="quickVerifyModel(\\'' + escapeHtml(baseUrl) + '\\',\\'' + escapeHtml(models[i]) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
+        ' <button class="btn-small-ghost" onclick="event.stopPropagation();quickVerifyModel(\\'' + escapeHtml(baseUrl) + '\\',\\'' + escapeHtml(models[i]) + '\\',\\'' + escapeHtml(apiKey) + '\\')">验证</button>' +
       '</div>';
     }
     grid.innerHTML = html;
