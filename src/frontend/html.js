@@ -3130,6 +3130,44 @@ async function export9router() {
   }
 }
 
+function ccProtocolToAppType(proto) {
+  if (proto === 'anthropic') return 'claude';
+  if (proto === 'openai_chat' || proto === 'openai_responses') return 'codex';
+  return 'openclaw';
+}
+
+function ccBuildSettings(ep) {
+  var protos = ep.protocols || {};
+  var firstProto = Object.keys(protos).find(function(k) { return protos[k]; }) || 'openai_chat';
+  var appType = ccProtocolToAppType(firstProto);
+  var wireApi = firstProto === 'openai_responses' ? 'responses' : 'chat';
+  var model = (ep.models && ep.models.length > 0) ? ep.models[0] : '';
+  var keyValue = (ep.keys && ep.keys.length > 0) ? ep.keys[0].key_value : '';
+  var keyAlias = (ep.keys && ep.keys.length > 0 && ep.keys[0].alias) || '';
+
+  if (appType === 'claude') {
+    var env = { ANTHROPIC_BASE_URL: ep.url, ANTHROPIC_AUTH_TOKEN: keyValue };
+    if (model) env.ANTHROPIC_MODEL = model;
+    return JSON.stringify({ env: env });
+  }
+
+  if (appType === 'codex') {
+    var config = 'model_provider = "custom"\n';
+    if (model) config += 'model = "' + model + '"\n';
+    config += '\n[model_providers.custom]\nname = "custom"\nwire_api = "' + wireApi + '"\nbase_url = "' + ep.url + '"\n';
+    var auth = { OPENAI_API_KEY: keyValue, auth_mode: 'apikey' };
+    return JSON.stringify({ auth: auth, config: config });
+  }
+
+  var obj = { baseUrl: ep.url, apiKey: keyValue, api: 'openai-completions' };
+  if (model) obj.models = [{ id: model }];
+  return JSON.stringify(obj);
+}
+
+function ccSlug(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
+}
+
 async function exportCCSwitch() {
   if (!confirm('导出的文件包含所有 API Key，请确认环境安全后再下载。是否继续？')) return;
 
@@ -3142,12 +3180,9 @@ async function exportCCSwitch() {
       SQL = await loadSqlJs();
     } catch (e) {
       showToast('sql.js 加载失败，降级为 JSON 格式下载', 'info');
-      var data = await API.get('/api/export/ccswitch-data');
-      if (!data.providers || data.providers.length === 0) {
-        showToast('没有可导出的数据', 'info');
-        return;
-      }
-      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var fallbackData = await API.get('/api/export/ccswitch-data');
+      if (!fallbackData.endpoints || fallbackData.endpoints.length === 0) { showToast('没有可导出的数据', 'info'); return; }
+      var blob = new Blob([JSON.stringify(fallbackData, null, 2)], { type: 'application/json' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -3159,36 +3194,86 @@ async function exportCCSwitch() {
     }
 
     var data = await API.get('/api/export/ccswitch-data');
-    if (!data.providers || data.providers.length === 0) {
-      showToast('没有可导出的数据', 'info');
-      return;
-    }
+    if (!data.endpoints || data.endpoints.length === 0) { showToast('没有可导出的数据', 'info'); return; }
 
     var db = new SQL.Database();
 
-    db.run("CREATE TABLE IF NOT EXISTS providers (" +
-      "id INTEGER PRIMARY KEY, app_type TEXT, name TEXT, slug TEXT, sort INTEGER DEFAULT 0, " +
-      "settings_config TEXT, website_url TEXT DEFAULT '', enable_provider INTEGER DEFAULT 1, " +
-      "created_at TEXT, updated_at TEXT, deleted_at TEXT)");
+    // Create all tables matching CC-Switch schema
+    db.run("CREATE TABLE providers (id TEXT NOT NULL, app_type TEXT NOT NULL, name TEXT NOT NULL, settings_config TEXT NOT NULL, website_url TEXT, category TEXT, created_at INTEGER, sort_index INTEGER, notes TEXT, icon TEXT, icon_color TEXT, meta TEXT NOT NULL DEFAULT '{}', is_current INTEGER NOT NULL DEFAULT 0, in_failover_queue INTEGER NOT NULL DEFAULT 0, cost_multiplier TEXT NOT NULL DEFAULT '1.0', limit_daily_usd TEXT, limit_monthly_usd TEXT, provider_type TEXT, PRIMARY KEY (id, app_type))");
 
-    db.run("CREATE TABLE IF NOT EXISTS provider_endpoints (" +
-      "id INTEGER PRIMARY KEY, provider_id INTEGER, app_type TEXT, endpoint_type TEXT DEFAULT 'main', " +
-      "name TEXT, baseUrl TEXT, apiKey TEXT, models TEXT DEFAULT '', sort INTEGER DEFAULT 0, " +
-      "status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT, deleted_at TEXT)");
+    db.run("CREATE TABLE provider_endpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, app_type TEXT NOT NULL, url TEXT NOT NULL, added_at INTEGER, FOREIGN KEY (provider_id, app_type) REFERENCES providers(id, app_type) ON DELETE CASCADE)");
 
-    var insertProvider = db.prepare("INSERT INTO providers (id, app_type, name, slug, sort, settings_config, website_url, enable_provider, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    for (var i = 0; i < data.providers.length; i++) {
-      var p = data.providers[i];
-      insertProvider.run([p.id, p.app_type, p.name, p.slug, p.sort, p.settings_config, p.website_url, p.enable_provider, p.created_at, p.updated_at, p.deleted_at]);
+    db.run("CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL, is_healthy INTEGER NOT NULL DEFAULT 1, consecutive_failures INTEGER NOT NULL DEFAULT 0, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (provider_id, app_type), FOREIGN KEY (provider_id, app_type) REFERENCES providers(id, app_type) ON DELETE CASCADE)");
+
+    db.run("CREATE TABLE mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, server_config TEXT NOT NULL, description TEXT, homepage TEXT, docs TEXT, tags TEXT NOT NULL DEFAULT '[]', enabled_claude INTEGER NOT NULL DEFAULT 0, enabled_codex INTEGER NOT NULL DEFAULT 0, enabled_gemini INTEGER NOT NULL DEFAULT 0, enabled_opencode INTEGER NOT NULL DEFAULT 0, enabled_hermes INTEGER NOT NULL DEFAULT 0)");
+
+    db.run("CREATE TABLE model_pricing (model_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, input_cost_per_million TEXT NOT NULL, output_cost_per_million TEXT NOT NULL, cache_read_cost_per_million TEXT NOT NULL DEFAULT '0', cache_creation_cost_per_million TEXT NOT NULL DEFAULT '0')");
+
+    db.run("CREATE TABLE prompts (id TEXT NOT NULL, app_type TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL, description TEXT, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (id, app_type))");
+
+    db.run("CREATE TABLE proxy_config (app_type TEXT PRIMARY KEY, proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1', listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 3, streaming_first_byte_timeout INTEGER NOT NULL DEFAULT 60, streaming_idle_timeout INTEGER NOT NULL DEFAULT 120, non_streaming_timeout INTEGER NOT NULL DEFAULT 600, circuit_failure_threshold INTEGER NOT NULL DEFAULT 4, circuit_success_threshold INTEGER NOT NULL DEFAULT 2, circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60, circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6, circuit_min_requests INTEGER NOT NULL DEFAULT 10, default_cost_multiplier TEXT NOT NULL DEFAULT '1', pricing_model_source TEXT NOT NULL DEFAULT 'response', created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), live_takeover_active INTEGER NOT NULL DEFAULT 0)");
+
+    db.run("CREATE TABLE proxy_live_backup (app_type TEXT PRIMARY KEY, original_config TEXT NOT NULL, backed_up_at TEXT NOT NULL)");
+
+    db.run("CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, app_type TEXT NOT NULL, model TEXT NOT NULL, request_model TEXT, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, input_cost_usd TEXT NOT NULL DEFAULT '0', output_cost_usd TEXT NOT NULL DEFAULT '0', cache_read_cost_usd TEXT NOT NULL DEFAULT '0', cache_creation_cost_usd TEXT NOT NULL DEFAULT '0', total_cost_usd TEXT NOT NULL DEFAULT '0', latency_ms INTEGER NOT NULL, first_token_ms INTEGER, duration_ms INTEGER, status_code INTEGER NOT NULL, error_message TEXT, session_id TEXT, provider_type TEXT, is_streaming INTEGER NOT NULL DEFAULT 0, cost_multiplier TEXT NOT NULL DEFAULT '1.0', created_at INTEGER NOT NULL, data_source TEXT NOT NULL DEFAULT 'proxy')");
+
+    db.run("CREATE TABLE session_log_sync (file_path TEXT PRIMARY KEY, last_modified INTEGER NOT NULL, last_line_offset INTEGER NOT NULL DEFAULT 0, last_synced_at INTEGER NOT NULL)");
+
+    db.run("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)");
+
+    db.run("CREATE TABLE skill_repos (owner TEXT NOT NULL, name TEXT NOT NULL, branch TEXT NOT NULL DEFAULT 'main', enabled INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (owner, name))");
+
+    db.run("CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, directory TEXT NOT NULL, repo_owner TEXT, repo_name TEXT, repo_branch TEXT DEFAULT 'main', readme_url TEXT, enabled_claude INTEGER NOT NULL DEFAULT 0, enabled_codex INTEGER NOT NULL DEFAULT 0, enabled_gemini INTEGER NOT NULL DEFAULT 0, enabled_opencode INTEGER NOT NULL DEFAULT 0, installed_at INTEGER NOT NULL DEFAULT 0, content_hash TEXT, updated_at INTEGER NOT NULL DEFAULT 0, enabled_hermes INTEGER NOT NULL DEFAULT 0)");
+
+    db.run("CREATE TABLE stream_check_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, provider_name TEXT NOT NULL, app_type TEXT NOT NULL, status TEXT NOT NULL, success INTEGER NOT NULL, message TEXT NOT NULL, response_time_ms INTEGER, http_status INTEGER, model_used TEXT, retry_count INTEGER DEFAULT 0, tested_at INTEGER NOT NULL)");
+
+    db.run("CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, request_count INTEGER NOT NULL DEFAULT 0, success_count INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, total_cost_usd TEXT NOT NULL DEFAULT '0', avg_latency_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (date, app_type, provider_id, model))");
+
+    // Insert providers and endpoints
+    var insertProvider = db.prepare("INSERT INTO providers (id, app_type, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, is_current, in_failover_queue, cost_multiplier, limit_daily_usd, limit_monthly_usd, provider_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    var insertEndpoint = db.prepare("INSERT INTO provider_endpoints (provider_id, app_type, url, added_at) VALUES (?, ?, ?, ?)");
+
+    var now = Date.now();
+    var totalProviders = 0;
+
+    for (var ei = 0; ei < data.endpoints.length; ei++) {
+      var ep = data.endpoints[ei];
+      var protos = ep.protocols || {};
+      var firstProto = Object.keys(protos).find(function(k) { return protos[k]; }) || 'openai_chat';
+      var appType = ccProtocolToAppType(firstProto);
+      var slug = ccSlug(ep.name);
+
+      for (var ki = 0; ki < ep.keys.length; ki++) {
+        totalProviders++;
+        var pid = slug + '-' + now + '-' + ki;
+        var pname = ep.name + (ep.keys.length > 1 ? ' #' + (ki + 1) : '');
+
+        var singleEp = { url: ep.url, protocols: protos, models: ep.models, keys: [ep.keys[ki]] };
+        var sc = ccBuildSettings(singleEp);
+
+        insertProvider.run([pid, appType, pname, sc, '', '', now, ki, '', '', '', '{}', 1, 0, '1.0', '', '', '']);
+        insertEndpoint.run([pid, appType, ep.url, now]);
+      }
     }
     insertProvider.free();
+    insertEndpoint.free();
 
-    var insertEp = db.prepare("INSERT INTO provider_endpoints (id, provider_id, app_type, endpoint_type, name, baseUrl, apiKey, models, sort, status, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    for (var j = 0; j < data.provider_endpoints.length; j++) {
-      var ep = data.provider_endpoints[j];
-      insertEp.run([ep.id, ep.provider_id, ep.app_type, ep.endpoint_type, ep.name, ep.baseUrl, ep.apiKey, ep.models, ep.sort, ep.status, ep.created_at, ep.updated_at, ep.deleted_at]);
+    // Default proxy_config rows
+    var insertProxy = db.prepare("INSERT INTO proxy_config (app_type) VALUES (?)");
+    var proxyTypes = ['claude', 'codex', 'gemini'];
+    for (var pi = 0; pi < proxyTypes.length; pi++) {
+      try { insertProxy.run([proxyTypes[pi]]); } catch(e) {}
     }
-    insertEp.free();
+    insertProxy.free();
+
+    // Default settings
+    var insertSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+    insertSetting.run(['common_config_codex', 'model_reasoning_effort = "high"\n']);
+    insertSetting.run(['common_config_claude', '{\n  "includeCoAuthoredBy": false\n}']);
+    insertSetting.run(['universal_providers', '{}']);
+    insertSetting.run(['official_providers_seeded', 'true']);
+    insertSetting.run(['common_config_legacy_migrated_v1', 'true']);
+    insertSetting.free();
 
     var binaryArray = db.export();
     db.close();
@@ -3203,7 +3288,7 @@ async function exportCCSwitch() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    showToast('导出成功: ' + data.providers.length + ' 个提供者', 'success');
+    showToast('导出成功: ' + totalProviders + ' 个提供者', 'success');
   } catch (err) {
     showToast('导出失败: ' + err.message, 'error');
   } finally {
