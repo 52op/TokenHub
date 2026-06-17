@@ -84,6 +84,10 @@ export async function updateEndpoint(env, id, userId, data) {
     updates.push("models = ?");
     binds.push(JSON.stringify(data.models));
   }
+  if (data.protocols !== undefined) {
+    updates.push("protocols = ?");
+    binds.push(JSON.stringify(data.protocols));
+  }
   if (updates.length === 0) return null;
   updates.push("updated_at = datetime('now')");
   binds.push(id, userId);

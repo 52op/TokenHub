@@ -1974,7 +1974,10 @@ async function loadEndpointDetail(id) {
           protoBadges +
           '<span class="badge badge-muted">' + keys.length + ' Key</span>' +
         '</div>' +
-        '<span id="epSettingsArrow" style="font-size:12px;color:var(--muted);transition:transform 0.2s">▼</span>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<button class="btn btn-small" style="color:var(--error);border-color:var(--error);padding:2px 8px;font-size:11px" onclick="event.stopPropagation();deleteEndpoint(\'' + ep.id + '\')">删除</button>' +
+          '<span id="epSettingsArrow" style="font-size:12px;color:var(--muted);transition:transform 0.2s">▼</span>' +
+        '</div>' +
       '</div>' +
       '<div id="epSettingsBody" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--hairline)">' +
         '<div class="card-section">' +
@@ -1988,6 +1991,14 @@ async function loadEndpointDetail(id) {
         '<div class="card-section">' +
           '<label class="label">备注</label>' +
           '<textarea id="epNotes" class="text-input" rows="2">' + escapeHtml(ep.notes || '') + '</textarea>' +
+        '</div>' +
+        '<div class="card-section">' +
+          '<label class="label">协议支持</label>' +
+          '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+            '<label class="toggle"><input type="checkbox" id="epProtoOpenaiChat" ' + (protos.openai_chat ? 'checked' : '') + ' /><span>OpenAI Chat</span></label>' +
+            '<label class="toggle"><input type="checkbox" id="epProtoOpenaiResponses" ' + (protos.openai_responses ? 'checked' : '') + ' /><span>OpenAI Responses</span></label>' +
+            '<label class="toggle"><input type="checkbox" id="epProtoAnthropic" ' + (protos.anthropic ? 'checked' : '') + ' /><span>Anthropic</span></label>' +
+          '</div>' +
         '</div>' +
         '<div class="card-section">' +
           '<label class="label">自动检测</label>' +
@@ -2108,7 +2119,12 @@ async function updateEndpoint(id) {
   const name = document.getElementById('epName')?.value;
   const notes = document.getElementById('epNotes')?.value;
   const autoHealth = document.getElementById('epAutoHealth')?.checked ? 1 : 0;
-  await API.put('/api/endpoints/' + id, { name: name, notes: notes, auto_health: autoHealth });
+  const protocols = {
+    openai_chat: document.getElementById('epProtoOpenaiChat')?.checked || false,
+    openai_responses: document.getElementById('epProtoOpenaiResponses')?.checked || false,
+    anthropic: document.getElementById('epProtoAnthropic')?.checked || false,
+  };
+  await API.put('/api/endpoints/' + id, { name: name, notes: notes, auto_health: autoHealth, protocols: protocols });
   showToast('已保存');
 }
 
