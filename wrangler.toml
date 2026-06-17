@@ -17,3 +17,8 @@ crons = ["*/30 * * * *"]
 [[r2_buckets]]
 binding = "IMPORTS_BUCKET"
 bucket_name = "it0731-files"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css", "**/*.txt"]
+fallthrough = true

@@ -7,7 +7,6 @@ docs/
 DESIGN-*.md
 
 .*.token
-*.txt
 response.html
 migration_*.sql
 package-lock.json
