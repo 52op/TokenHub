@@ -762,10 +762,13 @@ function renderDetectResults(data, url, apiKey, customPath) {
     html += '<div class="models-wrap" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline)" id="models-section-' + bi + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
         '<span class="caption-uppercase">模型' + (b.models && b.models.models ? ' (' + b.models.models.length + ')' : '') + '</span>' +
-        '<button class="btn btn-small" onclick="fetchModelsForBase(\'' + escapeHtml(b.base) + '\',\'' + escapeHtml(apiKey) + '\',\'models-section-' + bi + '\')">获取模型</button>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="text" id="modelSearch-' + bi + '" class="text-input" placeholder="搜索..." style="max-width:120px;padding:4px 8px;font-size:12px" oninput="filterModelGrid(\'modelSearch-' + bi + '\',\'models-grid-' + bi + '\')" />' +
+          '<button class="btn btn-small" onclick="fetchModelsForBase(\'' + escapeHtml(b.base) + '\',\'' + escapeHtml(apiKey) + '\',\'models-section-' + bi + '\')">获取模型</button>' +
+        '</div>' +
       '</div>';
     if (b.models && b.models.models && b.models.models.length > 0) {
-      html += '<div class="models-grid">';
+      html += '<div class="models-grid" id="models-grid-' + bi + '">';
       for (const m of b.models.models) {
         const mid = typeof m === 'string' ? m : (m.id || '');
         html += '<div class="model-chip ' + (m.supported !== false ? 'available' : '') + '" onclick="fillQuickModel(\'' + escapeHtml(mid) + '\',' + bi + ')" style="cursor:pointer">' +
@@ -923,6 +926,7 @@ async function fetchModelsForBase(baseUrl, apiKey, sectionId) {
       if (existing) existing.remove();
       grid = document.createElement('div');
       grid.className = 'models-grid';
+      grid.id = 'models-grid-' + bi;
       section.appendChild(grid);
     }
 
@@ -2027,6 +2031,7 @@ async function loadEndpointDetail(id) {
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
         '<span class="caption-uppercase">模型 (' + models.length + ')</span>' +
         '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="text" id="epModelSearch" class="text-input" placeholder="搜索模型..." style="max-width:150px;padding:4px 8px;font-size:12px" oninput="filterModelGrid(\'epModelSearch\',\'epModelsGrid\')" />' +
           '<button class="btn btn-small" onclick="fetchModelsForEndpoint(\'' + ep.id + '\',\'' + escapeHtml(ep.url) + '\')">自动获取</button>' +
           '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="toggleAddForm(\'addModelForm\')" title="手动添加模型">+</span>' +
         '</div>' +
@@ -2162,7 +2167,12 @@ async function fetchModelsForEndpoint(endpointId, url) {
 
     var html = '<div class="models-grid">';
     for (var i = 0; i < merged.length; i++) {
-      html += '<span class="model-chip available">' + escapeHtml(merged[i]) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\'' + endpointId + '\',\'' + escapeHtml(merged[i]) + '\')">&times;</span></span>';
+      var mid = typeof merged[i] === 'string' ? merged[i] : (merged[i].id || '');
+      html += '<span class="model-chip available" onclick="selectChatModel(\'' + escapeHtml(mid) + '\')" style="cursor:pointer" title="点击选择到聊天测试">' +
+        escapeHtml(mid) +
+        ' <button class="btn-small-ghost" style="font-size:11px" onclick="event.stopPropagation();verifyEndpointModel(\'' + endpointId + '\',\'' + escapeHtml(url) + '\',\'' + escapeHtml(mid) + '\')">验证</button>' +
+        ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="event.stopPropagation();removeModelFromEndpoint(\'' + endpointId + '\',\'' + escapeHtml(mid) + '\')">&times;</span>' +
+      '</span>';
     }
     html += '</div>';
     grid.innerHTML = html;
@@ -2349,6 +2359,30 @@ async function retryChatMessage(msgIndex) {
   saveChatHistory();
   renderChatMessages();
   await sendChatMessage(chatState.endpointId, userMsg.content);
+}
+
+function filterModelGrid(inputId, containerId) {
+  var input = document.getElementById(inputId);
+  var container = document.getElementById(containerId);
+  if (!input || !container) return;
+  var q = input.value.trim().toLowerCase();
+  var grid = container.querySelector('.models-grid') || container;
+  var chips = grid.querySelectorAll('.model-chip');
+  var shown = 0;
+  for (var i = 0; i < chips.length; i++) {
+    var text = (chips[i].textContent || '').toLowerCase();
+    if (!q || text.indexOf(q) !== -1) {
+      chips[i].style.display = '';
+      shown++;
+    } else {
+      chips[i].style.display = 'none';
+    }
+  }
+  var counter = container.closest('.card, .models-wrap')?.querySelector('.caption-uppercase');
+  if (counter) {
+    var base = counter.textContent.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\(\d+\/\d+\)\s*$/, '');
+    counter.textContent = q ? base + ' (' + shown + '/' + chips.length + ')' : base + ' (' + chips.length + ')';
+  }
 }
 
 function selectChatModel(mid) {
