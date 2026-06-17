@@ -1624,7 +1624,7 @@ async function importFromUrl() {
   if (!urlInput) return;
   var url = urlInput.value.trim();
   if (!url) { showToast('请输入文件下载 URL', 'error'); return; }
-  if (!/^https?:///.test(url)) { showToast('URL 必须以 http:// 或 https:// 开头', 'error'); return; }
+  if (!/^https?:\/\//.test(url)) { showToast('URL 必须以 http:// 或 https:// 开头', 'error'); return; }
   var btn = urlInput.nextElementSibling;
   var origText = btn ? btn.textContent : '';
   if (btn) { btn.textContent = '下载中...'; btn.disabled = true; }
