@@ -3248,21 +3248,46 @@ async function exportCCSwitch() {
     insertProvider.free();
     insertEndpoint.free();
 
-    // Default proxy_config rows
-    var insertProxy = db.prepare("INSERT INTO proxy_config (app_type) VALUES (?)");
-    var proxyTypes = ['claude', 'codex', 'gemini'];
+    // Insert provider_health for each provider
+    var insertHealth = db.prepare("INSERT OR IGNORE INTO provider_health (provider_id, app_type, is_healthy, consecutive_failures, last_success_at, last_failure_at, last_error, updated_at) VALUES (?, ?, 1, 0, NULL, NULL, NULL, ?)");
+    for (var hi = 0; hi < data.endpoints.length; hi++) {
+      var hep = data.endpoints[hi];
+      var hprotos = hep.protocols || {};
+      var hfirstProto = Object.keys(hprotos).find(function(k) { return hprotos[k]; }) || 'openai_chat';
+      var happType = ccProtocolToAppType(hfirstProto);
+      var hslug = ccSlug(hep.name);
+      for (var hki = 0; hki < hep.keys.length; hki++) {
+        var hpid = hslug + '-' + now + '-' + hi + '-' + hki;
+        try { insertHealth.run([hpid, happType, new Date().toISOString()]); } catch(e) {}
+      }
+    }
+    insertHealth.free();
+
+    // Default proxy_config rows for all app types
+    var insertProxy = db.prepare("INSERT OR IGNORE INTO proxy_config (app_type) VALUES (?)");
+    var proxyTypes = ['claude', 'codex', 'gemini', 'opencode', 'hermes'];
     for (var pi = 0; pi < proxyTypes.length; pi++) {
       try { insertProxy.run([proxyTypes[pi]]); } catch(e) {}
     }
     insertProxy.free();
 
-    // Default settings
+    // Default settings matching CC-Switch native backup
     var insertSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
-    insertSetting.run(['common_config_codex', 'model_reasoning_effort = "high"\\n']);
-    insertSetting.run(['common_config_claude', '{\\n  "includeCoAuthoredBy": false\\n}']);
+    insertSetting.run(['common_config_codex', 'model_reasoning_effort = \"high\"\\n']);
+    insertSetting.run(['common_config_claude', '{\\n  \"includeCoAuthoredBy\": false\\n}']);
+    insertSetting.run(['common_config_opencode', '{}']);
+    insertSetting.run(['common_config_gemini', '{}']);
+    insertSetting.run(['common_config_hermes', '{}']);
     insertSetting.run(['universal_providers', '{}']);
     insertSetting.run(['official_providers_seeded', 'true']);
     insertSetting.run(['common_config_legacy_migrated_v1', 'true']);
+    insertSetting.run(['proxy_enabled_codex', 'false']);
+    insertSetting.run(['proxy_enabled_claude', 'false']);
+    insertSetting.run(['proxy_enabled_opencode', 'false']);
+    insertSetting.run(['proxy_enabled_gemini', 'false']);
+    insertSetting.run(['proxy_enabled_hermes', 'false']);
+    insertSetting.run(['auto_failover_enabled', 'false']);
+    insertSetting.run(['cost_multiplier', '1.0']);
     insertSetting.free();
 
     var binaryArray = db.export();
