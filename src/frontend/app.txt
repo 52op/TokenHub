@@ -2006,7 +2006,11 @@ async function loadEndpointDetail(id) {
 
     var modelChips = models.map(function(m) {
       var mid = typeof m === 'string' ? m : (m.id || '');
-      return '<span class="model-chip available">' + escapeHtml(mid) + ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="removeModelFromEndpoint(\'' + ep.id + '\',\'' + escapeHtml(mid) + '\')">&times;</span></span>';
+      return '<span class="model-chip available" onclick="selectChatModel(\'' + escapeHtml(mid) + '\')" style="cursor:pointer" title="点击选择到聊天测试">' +
+        escapeHtml(mid) +
+        ' <button class="btn-small-ghost" style="font-size:11px" onclick="event.stopPropagation();verifyEndpointModel(\'' + ep.id + '\',\'' + escapeHtml(ep.url) + '\',\'' + escapeHtml(mid) + '\')">验证</button>' +
+        ' <span style="cursor:pointer;color:var(--error);margin-left:2px" onclick="event.stopPropagation();removeModelFromEndpoint(\'' + ep.id + '\',\'' + escapeHtml(mid) + '\')">&times;</span>' +
+      '</span>';
     }).join('');
     html += '<div class="card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
@@ -2329,6 +2333,45 @@ async function retryChatMessage(msgIndex) {
   saveChatHistory();
   renderChatMessages();
   await sendChatMessage(chatState.endpointId, userMsg.content);
+}
+
+function selectChatModel(mid) {
+  var sel = document.getElementById('chatModel');
+  if (sel && sel.tagName === 'SELECT') {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === mid) { sel.selectedIndex = i; showToast('已选择模型: ' + mid, 'info'); return; }
+    }
+  } else if (sel) {
+    sel.value = mid;
+    showToast('已填入模型: ' + mid, 'info');
+    return;
+  }
+  showToast('模型未在列表中: ' + mid, 'info');
+}
+
+async function verifyEndpointModel(epId, baseUrl, model) {
+  var keyId = document.getElementById('chatKeyId')?.value || '';
+  var protocol = document.getElementById('chatProtocol')?.value || 'openai_chat';
+  var apiKey = '';
+  if (keyId) {
+    try {
+      var kdata = await API.get('/api/keys/' + keyId);
+      apiKey = kdata.key_value || '';
+    } catch (e) {}
+  }
+  var btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    var data = await API.post('/api/test/model', { url: baseUrl, apiKey: apiKey, model: model, protocol: protocol });
+    if (data.ok) {
+      showToast('模型 ' + model + ' [' + protocol + ']: HTTP ' + data.status + ' ✓', 'success');
+    } else {
+      showToast('模型 ' + model + ' [' + protocol + ']: HTTP ' + data.status + ' ✗', 'error');
+    }
+  } catch (e) {
+    showToast('验证失败: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '验证'; }
 }
 
 async function sendChatMessage(endpointId, retryContent) {
