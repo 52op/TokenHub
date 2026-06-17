@@ -61,9 +61,12 @@ export default {
       });
     }
 
-    // API routes
+    // Detect
     if (path === "/api/detect" && request.method === "POST") {
       return detectRoute.handle(request, env);
+    }
+    if (path === "/api/detect/recent" && request.method === "GET") {
+      return detectRoute.handleRecent(request, env);
     }
 
     // Auth
@@ -101,6 +104,15 @@ export default {
     const redetectMatch = path.match(/^\/api\/endpoints\/([^/]+)\/redetect$/);
     if (redetectMatch && request.method === "POST") {
       return endpointsRoute.handleRedetect(request, env, redetectMatch[1]);
+    }
+
+    // Tags
+    const tagsMatch = path.match(/^\/api\/endpoints\/([^/]+)\/tags$/);
+    if (tagsMatch && request.method === "PUT") {
+      return endpointsRoute.handleUpdateTags(request, env, tagsMatch[1]);
+    }
+    if (path === "/api/tags" && request.method === "GET") {
+      return endpointsRoute.handleAllTags(request, env);
     }
 
     // Keys under endpoint

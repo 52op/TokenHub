@@ -11,10 +11,16 @@ export async function handleList(request, env) {
     search: url.searchParams.get("search"),
     sort: url.searchParams.get("sort"),
     order: url.searchParams.get("order"),
+    tag: url.searchParams.get("tag"),
     page: parseInt(url.searchParams.get("page")) || 1,
     limit: parseInt(url.searchParams.get("limit")) || 20,
   });
   const count = await db.countEndpoints(env, user.id, url.searchParams.get("search"));
+  // Attach tags to each endpoint
+  for (const ep of result.results || []) {
+    const tags = await db.getEndpointTags(env, ep.id, user.id);
+    ep.tags = (tags.results || []).map(t => t.tag);
+  }
   return jsonResponse({ endpoints: result.results, total: count.total });
 }
 
@@ -89,4 +95,21 @@ export async function handleRedetect(request, env, id) {
   }
 
   return jsonResponse(result);
+}
+
+export async function handleUpdateTags(request, env, id) {
+  const user = await requireUser(request, env);
+  if (!user) return errorResponse("未登录", 401);
+  const body = await request.json();
+  if (!body.tags || !Array.isArray(body.tags)) return errorResponse("缺少 tags 参数");
+  await db.setEndpointTags(env, id, user.id, body.tags);
+  const tags = await db.getEndpointTags(env, id, user.id);
+  return jsonResponse({ tags: (tags.results || []).map(t => t.tag) });
+}
+
+export async function handleAllTags(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return errorResponse("未登录", 401);
+  const result = await db.getAllTags(env, user.id);
+  return jsonResponse({ tags: result.results || [] });
 }

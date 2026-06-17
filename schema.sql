@@ -90,3 +90,12 @@ CREATE TABLE IF NOT EXISTS imported_files (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_imported_files_user ON imported_files(user_id);
+
+CREATE TABLE IF NOT EXISTS endpoint_tags (
+  endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY(endpoint_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_tags_user ON endpoint_tags(user_id);
+CREATE INDEX IF NOT EXISTS idx_tags_tag ON endpoint_tags(tag);

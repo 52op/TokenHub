@@ -29,6 +29,44 @@ const CSS = `:root {
   --radius-pill: 9999px;
 }
 
+[data-theme="dark"] {
+  --primary: #6366f1;
+  --primary-active: #818cf8;
+  --text-link: #60a5fa;
+  --ink: #e4e4e7;
+  --body: #a1a1aa;
+  --body-strong: #d4d4d8;
+  --muted: #71717a;
+  --muted-soft: #52525b;
+  --hairline: #27272a;
+  --hairline-soft: #1f1f23;
+  --hairline-strong: #3f3f46;
+  --canvas: #09090b;
+  --canvas-soft: #18181b;
+  --surface-card: #18181b;
+  --surface-strong: #27272a;
+  --surface-dark: #09090b;
+  --on-primary: #ffffff;
+  --on-dark: #e4e4e7;
+  --on-dark-soft: #a1a1aa;
+  --success: #4ade80;
+  --error: #f87171;
+  --warning: #fbbf24;
+}
+
+[data-theme="dark"] body { background: var(--canvas); color: var(--ink); }
+[data-theme="dark"] .card { background: var(--surface-card); border-color: var(--hairline); }
+[data-theme="dark"] .health-table th { background: var(--surface-strong); color: var(--body-strong); }
+[data-theme="dark"] .health-table td { border-color: var(--hairline); }
+[data-theme="dark"] .text-input { background: var(--canvas-soft); border-color: var(--hairline-strong); color: var(--ink); }
+[data-theme="dark"] .badge-green { background: #064e3b; color: #6ee7b7; }
+[data-theme="dark"] .badge-blue { background: #1e3a5f; color: #93c5fd; }
+[data-theme="dark"] .badge-purple { background: #3b0764; color: #c4b5fd; }
+[data-theme="dark"] .btn-secondary { background: var(--surface-strong); color: var(--ink); border-color: var(--hairline-strong); }
+[data-theme="dark"] .nav-bar { background: var(--surface-card); border-color: var(--hairline); }
+[data-theme="dark"] .empty-state { background: var(--surface-card); color: var(--muted); }
+[data-theme="dark"] .toast { background: var(--surface-strong); color: var(--ink); }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -866,6 +904,31 @@ textarea.text-input {
 `;
 
 const APP_JS = `
+// ========== Dark Mode (Task 11) ==========
+function initTheme() {
+  var saved = localStorage.getItem('tokenhub_theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    var btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = '🌙';
+  }
+}
+function toggleTheme() {
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('tokenhub_theme', 'light');
+    var btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = '☀️';
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('tokenhub_theme', 'dark');
+    var btn2 = document.getElementById('themeToggle');
+    if (btn2) btn2.textContent = '🌙';
+  }
+}
+initTheme();
+
 const TOKEN_KEY = 'tokenhub_token';
 let detectedBaseUrl = '';
 let detectedData = null;
@@ -1272,6 +1335,7 @@ async function renderPage() {
     if (path === '/' || path === '') {
       app.innerHTML = renderDetectPage();
       restoreDetectForm();
+      loadRecentDetections();
     } else if (path === '/app') {
       app.innerHTML = renderDashboard();
       restoreDashState();
@@ -1430,7 +1494,32 @@ function renderDetectPage() {
       '</div>' +
     '</div>' +
     '<div id="detectResults"></div>' +
+    '<div id="recentDetectList" style="margin-top:32px"></div>' +
   '</div>';
+}
+
+async function loadRecentDetections() {
+  var el = document.getElementById('recentDetectList');
+  if (!el) return;
+  try {
+    var data = await API.get('/api/detect/recent');
+    var records = data.records || [];
+    if (records.length === 0) return;
+    var html = '<div class="card"><div class="caption-uppercase" style="margin-bottom:12px">最近检测记录</div>' +
+      '<table class="health-table"><tr><th>时间</th><th>状态</th><th>接口</th><th>状态码</th><th>耗时</th></tr>';
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      html += '<tr>' +
+        '<td class="cell-time">' + formatTime(r.checked_at) + '</td>' +
+        '<td><span class="dot ' + (r.is_alive ? 'dot-green' : 'dot-red') + '"></span> ' + (r.is_alive ? '成功' : '失败') + '</td>' +
+        '<td>' + escapeHtml(r.endpoint_name || r.target_url || '-') + '</td>' +
+        '<td>' + (r.status_code || '-') + '</td>' +
+        '<td>' + (r.response_time_ms ? r.response_time_ms + 'ms' : '-') + '</td>' +
+      '</tr>';
+    }
+    html += '</table></div>';
+    el.innerHTML = html;
+  } catch (e) {}
 }
 
 async function startDetection() {
@@ -1799,11 +1888,19 @@ async function retrySend(url, apiKey) {
 
 function renderDashboard() {
   return '<div class="container">' +
+    '<div id="dashboardSummary" style="margin-bottom:20px"></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
       '<h2 class="display-sm">我的接口</h2>' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-secondary" onclick="showImportDialog()">导入</button>' +
-        '<a href="/" onclick="return navigate(\\'/\\')" class="btn btn-primary">+ 新增检测</a>' +
+        '<div style="position:relative;display:inline-block">' +
+          '<button class="btn btn-secondary" onclick="toggleExportMenu()">导出 ▾</button>' +
+          '<div id="exportMenu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface-card);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;min-width:180px;padding:4px">' +
+            '<div class="export-menu-item" onclick="confirmExport(\\\'9router\\\')">导出 9router JSON</div>' +
+            '<div class="export-menu-item" onclick="confirmExport(\\\'ccswitch\\\')">导出 CC-Switch .db</div>' +
+          '</div>' +
+        '</div>' +
+        '<a href="/" onclick="return navigate(\\\'/\\\')" class="btn btn-primary">+ 新增检测</a>' +
       '</div>' +
     '</div>' +
     '<div id="importArea" style="display:none;margin-bottom:16px"></div>' +
@@ -1819,6 +1916,9 @@ function renderDashboard() {
           '<option value="openai_responses">OpenAI Responses</option>' +
           '<option value="anthropic">Anthropic</option>' +
         '</select>' +
+        '<select id="filterTag" class="text-input" style="max-width:140px" onchange="dashPage=1;loadDashboard()">' +
+          '<option value="">全部标签</option>' +
+        '</select>' +
         '<div style="position:relative;max-width:180px;flex:1">' +
           '<input type="text" id="filterModel" class="text-input" placeholder="模型 ID 筛选" style="width:100%" onfocus="showModelDropdown()" oninput="filterModelDropdown()" onkeydown="if(event.key===\\'Enter\\'){dashPage=1;loadDashboard()}" />' +
           '<div id="modelDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:240px;overflow-y:auto;background:var(--surface-card);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200"></div>' +
@@ -1826,6 +1926,8 @@ function renderDashboard() {
         '<button class="btn btn-primary" onclick="dashPage=1;loadDashboard()">搜索</button>' +
         '<button class="btn btn-secondary" onclick="resetDashFilters()">重置</button>' +
         '<span style="flex:1"></span>' +
+        '<button class="btn btn-small-ghost" onclick="fetchAllMissingModels()" title="为缺少模型的接口自动获取">补全模型</button>' +
+        '<button class="btn btn-small-ghost" onclick="batchCheckEndpoints()">批量检测</button>' +
         '<button class="btn btn-small-ghost" style="color:var(--error)" onclick="batchDeleteEndpoints()">删除选中</button>' +
       '</div>' +
     '</div>' +
@@ -1857,9 +1959,11 @@ function resetDashFilters() {
   var s = document.getElementById('searchInput');
   var p = document.getElementById('filterProtocol');
   var m = document.getElementById('filterModel');
+  var t = document.getElementById('filterTag');
   if (s) s.value = '';
   if (p) p.value = '';
   if (m) m.value = '';
+  if (t) t.value = '';
   toggleSearchClear();
   dashPage = 1;
   loadDashboard();
@@ -1953,12 +2057,17 @@ async function loadDashboard() {
   var search = document.getElementById('searchInput')?.value || '';
   var filterProto = document.getElementById('filterProtocol')?.value || '';
   var filterModel = document.getElementById('filterModel')?.value.trim() || '';
+  var filterTag = document.getElementById('filterTag')?.value || '';
   var el = document.getElementById('endpointTable');
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  loadDashboardSummary();
+  loadTagFilter();
 
   try {
-    var data = await API.get('/api/endpoints?search=' + encodeURIComponent(search) + '&page=' + dashPage + '&limit=' + dashLimit + '&sort=' + dashSort + '&order=' + dashOrder);
+    var apiUrl = '/api/endpoints?search=' + encodeURIComponent(search) + '&page=' + dashPage + '&limit=' + dashLimit + '&sort=' + dashSort + '&order=' + dashOrder;
+    if (filterTag) apiUrl += '&tag=' + encodeURIComponent(filterTag);
+    var data = await API.get(apiUrl);
     var endpoints = data.endpoints || [];
     var total = data.total || 0;
 
@@ -2002,17 +2111,17 @@ async function loadDashboard() {
       if (dashSort !== col) return '';
       return dashOrder === 'asc' ? ' ↑' : ' ↓';
     };
-
+    
     var html = '<table class="health-table">' +
       '<tr>' +
         '<th style="width:30px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /></th>' +
-        '<th style="cursor:pointer" onclick="dashSortBy(\\'name\\')">名称' + sortIcon('name') + '</th>' +
-        '<th style="cursor:pointer" onclick="dashSortBy(\\'url\\')">URL' + sortIcon('url') + '</th>' +
+        '<th style="cursor:pointer" onclick="dashSortBy(\\\'name\\\')">名称' + sortIcon('name') + '</th>' +
+        '<th style="cursor:pointer" onclick="dashSortBy(\\\'url\\\')">URL' + sortIcon('url') + '</th>' +
         '<th>协议</th>' +
         '<th>模型</th>' +
-        '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\\'created_at\\')">创建时间' + sortIcon('created_at') + '</th>' +
-        '<th style="width:60px">Key</th>' +
-        '<th style="width:60px">操作</th>' +
+        '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\\\'created_at\\\')">创建时间' + sortIcon('created_at') + '</th>' +
+        '<th style="width:60px;cursor:pointer" onclick="dashSortBy(\\\'key_count\\\')">Key' + sortIcon('key_count') + '</th>' +
+        '<th style="width:90px">操作</th>' +
       '</tr>';
 
     for (var i = 0; i < endpoints.length; i++) {
@@ -2033,16 +2142,25 @@ async function loadDashboard() {
       var link = '/app/endpoint/' + ep.id;
       var linkOnclick = 'event.preventDefault();navigate(\\'/app/endpoint/' + ep.id + '\\')';
 
+      var healthDot = ep.is_alive
+        ? '<span class="dot dot-green" title="存活" style="margin-right:4px"></span>'
+        : (ep.key_count > 0 ? '<span class="dot dot-gray" title="未检测" style="margin-right:4px"></span>' : '');
+
+      var tagHtml = (ep.tags && ep.tags.length > 0)
+        ? ep.tags.map(function(t) { return '<span class="badge badge-blue" style="font-size:10px;margin-right:2px">' + escapeHtml(t) + '</span>'; }).join('')
+        : '';
+      
       html += '<tr id="ep-row-' + ep.id + '">' +
         '<td><input type="checkbox" class="ep-cb" data-id="' + ep.id + '" /></td>' +
-        '<td><a href="' + link + '" onclick="' + linkOnclick + '" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a></td>' +
+        '<td>' + healthDot + '<a href="' + link + '" onclick="' + linkOnclick + '" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a>' + (tagHtml ? '<div style="margin-top:2px">' + tagHtml + '</div>' : '') + '</td>' +
         '<td class="cell-url" style="max-width:300px"><a href="' + link + '" onclick="' + linkOnclick + '" style="color:var(--text-link)">' + escapeHtml(ep.url) + '</a></td>' +
         '<td>' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</td>' +
         '<td>' + modelHtml + '</td>' +
         '<td class="cell-time">' + formatTime(ep.created_at) + '</td>' +
         '<td style="text-align:center">' + (ep.key_count || 0) + '</td>' +
-        '<td><button class="btn-small-ghost" style="color:var(--error)" onclick="deleteEndpointRow(\\'' + ep.id + '\\')">删除</button></td>' +
+        '<td style="white-space:nowrap"><button class="btn-small-ghost" style="font-size:11px" onclick="editEndpointRow(\\\'' + ep.id + '\\\')">编辑</button> <button class="btn-small-ghost" style="color:var(--error);font-size:11px" onclick="deleteEndpointRow(\\\'' + ep.id + '\\\')">删除</button></td>' +
       '</tr>';
+      html += '<tr id="ep-edit-' + ep.id + '" style="display:none"><td colspan="8" id="ep-edit-cell-' + ep.id + '"></td></tr>';
     }
     html += '</table>';
     el.innerHTML = html;
@@ -2117,6 +2235,231 @@ async function batchDeleteEndpoints() {
   }
 }
 
+// ========== Dashboard Summary Cards ==========
+async function loadDashboardSummary() {
+  var el = document.getElementById('dashboardSummary');
+  if (!el) return;
+  try {
+    var data = await API.get('/api/health/summary');
+    var aliveRate = data.total_endpoints > 0 ? Math.round((data.alive_keys / data.total_endpoints) * 100) : 0;
+    var protoLabels = { openai_chat: 'Chat', openai_responses: 'Resp', anthropic: 'Anth' };
+    var protoColors = { openai_chat: 'badge-green', openai_responses: 'badge-blue', anthropic: 'badge-purple' };
+    var protoHtml = '';
+    var pd = data.protocol_distribution || {};
+    for (var k in pd) {
+      protoHtml += '<span class="badge ' + (protoColors[k] || 'badge-green') + '" style="margin-right:4px">' + (protoLabels[k] || k) + ' ' + pd[k] + '</span>';
+    }
+    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">' +
+      '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:var(--ink)">' + data.total_endpoints + '</div><div style="font-size:12px;color:var(--muted)">总接口</div></div>' +
+      '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:var(--ink)">' + (data.total_keys || 0) + '</div><div style="font-size:12px;color:var(--muted)">总 Key</div></div>' +
+      '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:' + (data.alive_keys > 0 ? 'var(--success)' : 'var(--muted)') + '">' + data.alive_keys + '/' + data.total_endpoints + '</div><div style="font-size:12px;color:var(--muted)">接口存活</div></div>' +
+      '<div class="card" style="text-align:center;padding:14px"><div style="font-size:14px;font-weight:500;margin-top:4px">' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</div><div style="font-size:12px;color:var(--muted);margin-top:4px">协议分布</div></div>' +
+    '</div>';
+  } catch (e) {}
+}
+
+// ========== Inline Edit (Task 3) ==========
+function editEndpointRow(id) {
+  var editRow = document.getElementById('ep-edit-' + id);
+  var editCell = document.getElementById('ep-edit-cell-' + id);
+  if (!editRow || !editCell) return;
+  if (editRow.style.display !== 'none') {
+    editRow.style.display = 'none';
+    return;
+  }
+  var row = document.getElementById('ep-row-' + id);
+  var nameEl = row ? row.querySelector('td:nth-child(2) a') : null;
+  var urlEl = row ? row.querySelector('td:nth-child(3) a') : null;
+  var currentName = nameEl ? nameEl.textContent : '';
+  var currentUrl = urlEl ? urlEl.textContent : '';
+  var tagBadges = row ? row.querySelectorAll('.badge-blue') : [];
+  var currentTags = Array.from(tagBadges).map(function(b) { return b.textContent; }).join(', ');
+  editCell.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;flex-wrap:wrap">' +
+    '<input type="text" id="edit-name-' + id + '" class="text-input" value="' + escapeHtml(currentName) + '" placeholder="名称" style="max-width:200px" />' +
+    '<input type="text" id="edit-url-' + id + '" class="text-input" value="' + escapeHtml(currentUrl) + '" placeholder="URL" style="flex:1;min-width:250px" />' +
+    '<input type="text" id="edit-tags-' + id + '" class="text-input" value="' + escapeHtml(currentTags) + '" placeholder="标签(逗号分隔)" style="max-width:200px" />' +
+    '<button class="btn btn-small btn-primary" onclick="saveEndpointInline(\\\'' + id + '\\\')">保存</button>' +
+    '<button class="btn btn-small btn-secondary" onclick="document.getElementById(\\\'ep-edit-' + id + '\\\').style.display=\\\'none\\\'">取消</button>' +
+  '</div>';
+  editRow.style.display = '';
+}
+
+async function saveEndpointInline(id) {
+  var name = document.getElementById('edit-name-' + id)?.value;
+  var url = document.getElementById('edit-url-' + id)?.value;
+  if (!url) return showToast('URL 不能为空', 'error');
+  try {
+    await API.put('/api/endpoints/' + id, { name: name, url: url });
+    var tagInput = document.getElementById('edit-tags-' + id);
+    if (tagInput) {
+      var tags = tagInput.value.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      await API.put('/api/endpoints/' + id + '/tags', { tags: tags });
+    }
+    showToast('已保存');
+    await loadDashboard();
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+// ========== Tag Filter & Management (Task 7) ==========
+async function loadTagFilter() {
+  var sel = document.getElementById('filterTag');
+  if (!sel) return;
+  var currentVal = sel.value;
+  try {
+    var data = await API.get('/api/tags');
+    var tags = data.tags || [];
+    sel.innerHTML = '<option value="">全部标签</option>';
+    for (var i = 0; i < tags.length; i++) {
+      sel.innerHTML += '<option value="' + escapeHtml(tags[i].tag) + '">' + escapeHtml(tags[i].tag) + ' (' + tags[i].count + ')</option>';
+    }
+    sel.value = currentVal;
+  } catch (e) {}
+}
+
+// ========== Batch Check (Task 5) ==========
+async function batchCheckEndpoints() {
+  var cbs = document.querySelectorAll('.ep-cb:checked');
+  if (cbs.length === 0) return showToast('请先选择接口', 'info');
+  if (!confirm('确定对选中的 ' + cbs.length + ' 个接口执行重新检测？')) return;
+  var btn = document.querySelector('button[onclick="batchCheckEndpoints()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '检测中...'; }
+  var ids = Array.from(cbs).map(function(cb) { return cb.dataset.id; });
+  var success = 0, fail = 0;
+  for (var i = 0; i < ids.length; i++) {
+    try {
+      await API.post('/api/endpoints/' + ids[i] + '/redetect');
+      success++;
+    } catch (e) { fail++; }
+  }
+  showToast('检测完成: 成功 ' + success + ', 失败 ' + fail, success > 0 ? 'success' : 'error');
+  if (btn) { btn.disabled = false; btn.textContent = '批量检测'; }
+  await loadDashboard();
+}
+
+// ========== Fetch Missing Models (Task 6) ==========
+async function fetchAllMissingModels() {
+  if (!confirm('将为所有缺少模型的接口自动获取模型列表，是否继续？')) return;
+  var btn = document.querySelector('button[onclick="fetchAllMissingModels()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '补全中...'; }
+  try {
+    var data = await API.get('/api/endpoints?limit=50');
+    var endpoints = data.endpoints || [];
+    var missing = endpoints.filter(function(ep) {
+      try { var m = JSON.parse(ep.models || '[]'); return !Array.isArray(m) || m.length === 0; } catch { return true; }
+    });
+    if (missing.length === 0) { showToast('所有接口已有模型', 'info'); return; }
+    var success = 0;
+    for (var i = 0; i < missing.length; i++) {
+      try {
+        var result = await API.post('/api/endpoints/' + missing[i].id + '/redetect');
+        if (result.success) success++;
+      } catch (e) {}
+    }
+    showToast('补全完成: ' + success + '/' + missing.length + ' 个接口获取到模型', 'success');
+    await loadDashboard();
+  } catch (e) {
+    showToast('补全失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '补全模型'; }
+  }
+}
+
+// ========== Export Menu (Task 10) ==========
+function toggleExportMenu() {
+  var menu = document.getElementById('exportMenu');
+  if (!menu) return;
+  menu.style.display = menu.style.display === 'none' ? '' : 'none';
+  if (menu.style.display !== 'none') {
+    setTimeout(function() {
+      document.addEventListener('click', function _close(e) {
+        if (!menu.contains(e.target)) { menu.style.display = 'none'; document.removeEventListener('click', _close); }
+      });
+    }, 10);
+  }
+}
+
+async function confirmExport(type) {
+  var menu = document.getElementById('exportMenu');
+  if (menu) menu.style.display = 'none';
+  try {
+    var data = await API.get('/api/health/summary');
+    var msg = '即将导出 ' + (data.total_endpoints || 0) + ' 个接口、' + (data.total_keys || 0) + ' 个 Key。\n导出的文件包含 API Key，请注意保管。\n\n是否继续？';
+    if (!confirm(msg)) return;
+    if (type === '9router') { await export9routerGlobal(); }
+    else { await exportCCSwitchGlobal(); }
+  } catch (e) {
+    showToast('导出失败: ' + e.message, 'error');
+  }
+}
+
+async function export9routerGlobal() {
+  var data = await API.get('/api/export/9router');
+  if (!data.providerConnections || data.providerConnections.length === 0) return showToast('没有可导出的数据', 'info');
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = '9router-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('导出成功: ' + data.providerConnections.length + ' 个连接', 'success');
+}
+
+async function exportCCSwitchGlobal() {
+  var btn = null;
+  try {
+    var SQL = null;
+    try { SQL = await loadSqlJs(); } catch (e) {
+      showToast('sql.js 加载失败，降级为 JSON 格式下载', 'info');
+      var fallbackData = await API.get('/api/export/ccswitch-data');
+      var blob = new Blob([JSON.stringify(fallbackData, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url;
+      a.download = 'ccswitch-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      return;
+    }
+    var data = await API.get('/api/export/ccswitch-data');
+    if (!data.endpoints || data.endpoints.length === 0) return showToast('没有可导出的数据', 'info');
+    var db = new SQL.Database();
+    db.run("CREATE TABLE providers (id TEXT NOT NULL, app_type TEXT NOT NULL, name TEXT NOT NULL, settings_config TEXT NOT NULL, website_url TEXT, category TEXT, created_at INTEGER, sort_index INTEGER, notes TEXT, icon TEXT, icon_color TEXT, meta TEXT NOT NULL DEFAULT '{}', is_current INTEGER NOT NULL DEFAULT 0, in_failover_queue INTEGER NOT NULL DEFAULT 0, cost_multiplier TEXT NOT NULL DEFAULT '1.0', limit_daily_usd TEXT, limit_monthly_usd TEXT, provider_type TEXT, PRIMARY KEY (id, app_type))");
+    db.run("CREATE TABLE provider_endpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, app_type TEXT NOT NULL, url TEXT NOT NULL, added_at INTEGER)");
+    db.run("CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL, is_healthy INTEGER NOT NULL DEFAULT 1, consecutive_failures INTEGER NOT NULL DEFAULT 0, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (provider_id, app_type))");
+    db.run("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)");
+    db.run("CREATE TABLE proxy_config (app_type TEXT PRIMARY KEY, proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1', listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 0)");
+    var insertP = db.prepare("INSERT INTO providers (id, app_type, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, is_current, in_failover_queue, cost_multiplier, limit_daily_usd, limit_monthly_usd, provider_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    var insertE = db.prepare("INSERT INTO provider_endpoints (provider_id, app_type, url, added_at) VALUES (?, ?, ?, ?)");
+    var now = Date.now();
+    for (var ei = 0; ei < data.endpoints.length; ei++) {
+      var ep = data.endpoints[ei];
+      var protos = ep.protocols || {};
+      var firstProto = Object.keys(protos).find(function(k) { return protos[k]; }) || 'openai_chat';
+      var appType = firstProto === 'anthropic' ? 'claude' : (firstProto === 'openai_chat' || firstProto === 'openai_responses' ? 'codex' : 'openclaw');
+      var slug = (ep.name || 'provider').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
+      for (var ki = 0; ki < ep.keys.length; ki++) {
+        var pid = slug + '-' + now + '-' + ei + '-' + ki;
+        var pname = ep.name + (ep.keys.length > 1 ? ' #' + (ki + 1) : '');
+        var sc = JSON.stringify({ baseUrl: ep.url, apiKey: ep.keys[ki].key_value, api: 'openai-completions' });
+        insertP.run([pid, appType, pname, sc, '', '', now, ki, '', '', '', '{}', 1, 0, '1.0', '', '', '']);
+        insertE.run([pid, appType, ep.url, now]);
+      }
+    }
+    insertP.free(); insertE.free();
+    var insertS = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+    insertS.run(['universal_providers', '{}']); insertS.run(['official_providers_seeded', 'true']);
+    insertS.free();
+    var binaryArray = db.export(); db.close();
+    var blob = new Blob([binaryArray], { type: 'application/x-sqlite3' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url;
+    a.download = 'ccswitch-export-' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.db';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('导出成功', 'success');
+  } catch (e) { showToast('导出失败: ' + e.message, 'error'); }
+}
+
 var importParsedItems = [];
 
 function buildImportDialog() {
@@ -2125,14 +2468,21 @@ function buildImportDialog() {
   area.style.display = '';
   window._importSource = window._importSource || '';
   area.innerHTML = '<div class="card">' +
-    '<div class="caption-uppercase" style="margin-bottom:12px">导入接口</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+      '<span class="caption-uppercase">导入接口</span>' +
+      '<span style="cursor:pointer;font-size:18px;color:var(--muted);line-height:1" onclick="document.getElementById(\\\'importArea\\\').style.display=\\\'none\\\'" title="关闭">&times;</span>' +
+    '</div>' +
     '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="btn btn-small ' + (window._importSource !== 'cc' ? 'btn-primary' : '') + '" onclick="switchImportSource()">9router JSON</button>' +
       '<button class="btn btn-small ' + (window._importSource === 'cc' ? 'btn-primary' : '') + '" onclick="switchImportSource(true)">CC-Switch 数据库</button>' +
     '</div>' +
     '<div id="importSourceDesc" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>' +
-    '<div class="input-row">' +
+    '<div class="input-row" style="margin-bottom:8px">' +
       '<input type="file" id="importFile" accept="' + (window._importSource === 'cc' ? '.db' : '.json') + '" onchange="handleImportFileFinal(this)" style="font-size:13px" />' +
+    '</div>' +
+    '<div class="input-row" style="margin-bottom:8px">' +
+      '<input type="text" id="importUrl" class="text-input" placeholder="或粘贴文件下载 URL（http/https）" style="flex:1" />' +
+      '<button class="btn btn-small" onclick="importFromUrl()">下载并导入</button>' +
     '</div>' +
     '<div id="importPreview"></div>' +
   '</div>';
@@ -2171,6 +2521,34 @@ function handleImportFileFinal(input) {
     handleCCSwitchFile(file);
   } else {
     handleImportFileJSON(file);
+  }
+}
+
+async function importFromUrl() {
+  var urlInput = document.getElementById('importUrl');
+  if (!urlInput) return;
+  var url = urlInput.value.trim();
+  if (!url) { showToast('请输入文件下载 URL', 'error'); return; }
+  if (!/^https?:\/\//.test(url)) { showToast('URL 必须以 http:// 或 https:// 开头', 'error'); return; }
+  var btn = urlInput.nextElementSibling;
+  var origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '下载中...'; btn.disabled = true; }
+  try {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var blob = await resp.blob();
+    var fileName = url.split('/').pop().split('?')[0] || 'import_file';
+    var file = new File([blob], fileName, { type: blob.type });
+    if (window._importSource === 'cc') {
+      handleCCSwitchFile(file);
+    } else {
+      handleImportFileJSON(file);
+    }
+    showToast('文件下载成功，正在解析...', 'success');
+  } catch (err) {
+    showToast('下载失败: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
 }
 
@@ -3520,6 +3898,7 @@ export function renderApp(user, siteSettings) {
         <a href="/app/health" onclick="return navigate('/app/health')" data-nav id="navHealth" class="auth-only">健康</a>
         <a href="/app/admin" onclick="return navigate('/app/admin')" data-nav id="adminLink" class="auth-only" style="display:none">管理</a>
       </div>
+      <button id="themeToggle" onclick="toggleTheme()" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;margin-right:8px" title="切换暗色模式">☀️</button>
       <div class="nav-user" id="navUser">
       </div>
     </div>

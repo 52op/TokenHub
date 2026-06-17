@@ -1,8 +1,9 @@
 // ==================== Endpoints ====================
 
-export async function getEndpoints(env, userId, { search, sort, order, page, limit }) {
+export async function getEndpoints(env, userId, { search, sort, order, page, limit, tag }) {
   let sql = `SELECT e.*,
-    (SELECT COUNT(*) FROM api_keys k WHERE k.endpoint_id = e.id) as key_count
+    (SELECT COUNT(*) FROM api_keys k WHERE k.endpoint_id = e.id) as key_count,
+    (SELECT CASE WHEN EXISTS(SELECT 1 FROM api_keys k2 WHERE k2.endpoint_id = e.id AND k2.last_status > 0) THEN 1 ELSE 0 END) as is_alive
     FROM endpoints e WHERE e.user_id = ?`;
   const binds = [userId];
   if (search) {
@@ -10,7 +11,12 @@ export async function getEndpoints(env, userId, { search, sort, order, page, lim
     const q = `%${search}%`;
     binds.push(q, q, q);
   }
-  const sortCol = sort === "name" ? "e.name" : "e.created_at";
+  if (tag) {
+    sql += " AND e.id IN (SELECT endpoint_id FROM endpoint_tags WHERE tag = ? AND user_id = ?)";
+    binds.push(tag, userId);
+  }
+  const sortMap = { name: "e.name", key_count: "key_count", created_at: "e.created_at" };
+  const sortCol = sortMap[sort] || "e.created_at";
   const ord = order === "asc" ? "ASC" : "DESC";
   sql += ` ORDER BY ${sortCol} ${ord}`;
   const pg = Math.max(1, page || 1);
@@ -96,10 +102,39 @@ export async function updateEndpointDetection(env, id, userId, protocols, models
   ).bind(protocols || "{}", models || "[]", id, userId).run();
 }
 
+// ==================== Tags ====================
+
+export async function getEndpointTags(env, endpointId, userId) {
+  return env.DB.prepare(
+    "SELECT tag FROM endpoint_tags WHERE endpoint_id = ? AND user_id = ? ORDER BY tag"
+  ).bind(endpointId, userId).all();
+}
+
+export async function setEndpointTags(env, endpointId, userId, tags) {
+  await env.DB.prepare("DELETE FROM endpoint_tags WHERE endpoint_id = ? AND user_id = ?")
+    .bind(endpointId, userId).run();
+  for (const tag of tags) {
+    const t = String(tag).trim().slice(0, 32);
+    if (t) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO endpoint_tags (endpoint_id, user_id, tag) VALUES (?, ?, ?)"
+      ).bind(endpointId, userId, t).run();
+    }
+  }
+}
+
+export async function getAllTags(env, userId) {
+  return env.DB.prepare(
+    "SELECT DISTINCT tag, COUNT(*) as count FROM endpoint_tags WHERE user_id = ? GROUP BY tag ORDER BY count DESC"
+  ).bind(userId).all();
+}
+
 export async function deleteEndpoint(env, id, userId) {
   await env.DB.prepare("DELETE FROM api_keys WHERE endpoint_id = ? AND user_id = ?")
     .bind(id, userId).run();
   await env.DB.prepare("DELETE FROM health_checks WHERE endpoint_id = ? AND user_id = ?")
+    .bind(id, userId).run();
+  await env.DB.prepare("DELETE FROM endpoint_tags WHERE endpoint_id = ? AND user_id = ?")
     .bind(id, userId).run();
   await env.DB.prepare("DELETE FROM endpoints WHERE id = ? AND user_id = ?")
     .bind(id, userId).run();
@@ -110,6 +145,8 @@ export async function deleteEndpoints(env, ids, userId) {
   await env.DB.prepare(`DELETE FROM api_keys WHERE endpoint_id IN (${placeholders}) AND user_id = ?`)
     .bind(...ids, userId).run();
   await env.DB.prepare(`DELETE FROM health_checks WHERE endpoint_id IN (${placeholders}) AND user_id = ?`)
+    .bind(...ids, userId).run();
+  await env.DB.prepare(`DELETE FROM endpoint_tags WHERE endpoint_id IN (${placeholders}) AND user_id = ?`)
     .bind(...ids, userId).run();
   await env.DB.prepare(`DELETE FROM endpoints WHERE id IN (${placeholders}) AND user_id = ?`)
     .bind(...ids, userId).run();

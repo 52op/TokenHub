@@ -126,6 +126,7 @@ export async function handleSummary(request, env) {
     SELECT
       COUNT(DISTINCT e.id) as total_endpoints,
       COUNT(CASE WHEN k.last_status IS NOT NULL AND k.last_status > 0 THEN 1 END) as alive_keys,
+      COUNT(k.id) as total_keys,
       AVG(k.last_response_time_ms) as avg_response_time_ms,
       MAX(k.last_checked_at) as last_checked_at
     FROM endpoints e
@@ -133,10 +134,26 @@ export async function handleSummary(request, env) {
     WHERE e.user_id = ?
   `).bind(user.id).first();
 
+  // Protocol distribution
+  const protos = await env.DB.prepare(
+    "SELECT protocols FROM endpoints WHERE user_id = ?"
+  ).bind(user.id).all();
+  const protoCounts = {};
+  for (const ep of protos.results || []) {
+    try {
+      const p = JSON.parse(ep.protocols || '{}');
+      for (const [k, v] of Object.entries(p)) {
+        if (v) protoCounts[k] = (protoCounts[k] || 0) + 1;
+      }
+    } catch {}
+  }
+
   return jsonResponse({
     total_endpoints: row.total_endpoints || 0,
+    total_keys: row.total_keys || 0,
     alive_keys: row.alive_keys || 0,
     avg_response_time_ms: row.avg_response_time_ms ? Math.round(row.avg_response_time_ms) : 0,
     last_checked_at: row.last_checked_at || "",
+    protocol_distribution: protoCounts,
   });
 }
