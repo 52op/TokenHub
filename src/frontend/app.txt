@@ -2053,6 +2053,36 @@ function toggleAddForm(formId) {
   }
 }
 
+var COMMON_API_URLS = [
+  'https://api.openai.com/v1',
+  'https://api.anthropic.com/v1',
+  'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
+  'https://generativelanguage.googleapis.com/v1beta/openai',
+  'https://api.mistral.ai/v1',
+  'https://api.deepseek.com/v1',
+  'https://api.groq.com/openai/v1',
+  'https://api.together.xyz/v1',
+  'https://api.fireworks.ai/inference/v1',
+  'https://openrouter.ai/api/v1',
+  'https://api.perplexity.ai',
+  'https://api.x.ai/v1',
+  'https://api.cohere.ai/v1',
+  'https://api.replicate.com/v1',
+];
+
+function showUrlAutocomplete() {
+  var inp = document.getElementById('epUrl');
+  var dd = document.getElementById('urlAutocomplete');
+  if (!inp || !dd) return;
+  var q = inp.value.trim().toLowerCase();
+  var items = COMMON_API_URLS.filter(function(u) { return u.toLowerCase().indexOf(q) !== -1; });
+  if (items.length === 0) { dd.style.display = 'none'; return; }
+  dd.innerHTML = items.map(function(u) {
+    return '<div class="key-dropdown-item" style="cursor:pointer;font-family:var(--font-mono);font-size:12px" onmousedown="event.preventDefault();document.getElementById(\'epUrl\').value=\'' + escapeHtml(u) + '\';document.getElementById(\'urlAutocomplete\').style.display=\'none\'">' + escapeHtml(u) + '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
 function renderEndpointDetail(id) {
   return '<div class="container">' +
     '<a href="/app" onclick="return navigate(\'/app\')" class="back-link">← 返回列表</a>' +
@@ -2098,7 +2128,10 @@ async function loadEndpointDetail(id) {
         '</div>' +
         '<div class="card-section">' +
           '<label class="label">URL</label>' +
-          '<div class="code-block">' + escapeHtml(ep.url) + '</div>' +
+          '<div style="position:relative">' +
+            '<input type="text" id="epUrl" class="text-input" value="' + escapeHtml(ep.url) + '" placeholder="API Base URL" style="width:100%;font-family:var(--font-mono);font-size:13px" onfocus="showUrlAutocomplete()" oninput="showUrlAutocomplete()" onblur="setTimeout(function(){var d=document.getElementById(\'urlAutocomplete\');if(d)d.style.display=\'none\'},200)" />' +
+            '<div id="urlAutocomplete" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:2px;max-height:200px;overflow-y:auto;background:var(--surface-card);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200"></div>' +
+          '</div>' +
         '</div>' +
         '<div class="card-section">' +
           '<label class="label">备注</label>' +
@@ -2231,6 +2264,7 @@ async function loadEndpointDetail(id) {
 
 async function updateEndpoint(id) {
   const name = document.getElementById('epName')?.value;
+  const url = document.getElementById('epUrl')?.value;
   const notes = document.getElementById('epNotes')?.value;
   const autoHealth = document.getElementById('epAutoHealth')?.checked ? 1 : 0;
   const protocols = {
@@ -2238,8 +2272,9 @@ async function updateEndpoint(id) {
     openai_responses: document.getElementById('epProtoOpenaiResponses')?.checked || false,
     anthropic: document.getElementById('epProtoAnthropic')?.checked || false,
   };
-  await API.put('/api/endpoints/' + id, { name: name, notes: notes, auto_health: autoHealth, protocols: protocols });
+  await API.put('/api/endpoints/' + id, { name: name, url: url, notes: notes, auto_health: autoHealth, protocols: protocols });
   showToast('已保存');
+  invalidateDashCache();
 }
 
 async function redetectEndpoint(id) {

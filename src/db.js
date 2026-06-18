@@ -74,7 +74,7 @@ export async function createEndpoint(env, userId, data) {
 export async function updateEndpoint(env, id, userId, data) {
   const updates = [];
   const binds = [];
-  for (const key of ["name", "notes", "auto_health", "health_interval"]) {
+  for (const key of ["name", "url", "notes", "auto_health", "health_interval"]) {
     if (data[key] !== undefined) {
       updates.push(`${key} = ?`);
       binds.push(data[key]);
