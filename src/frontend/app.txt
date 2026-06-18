@@ -2535,12 +2535,12 @@ async function sendChatMessage(endpointId, retryContent) {
       var errMsg = 'HTTP ' + data.status;
       if (data.error) errMsg += ': ' + data.error;
       var rawBody = data.raw || data.body || '';
-      chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length - 1, model: model, protocol: protocol, rawResponse: rawBody });
+      chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length, model: model, protocol: protocol, rawResponse: rawBody });
     }
     saveChatHistory();
     renderChatMessages();
   } catch (e) {
-    chatState.messages.push({ role: 'error', content: e.message, retryIndex: chatState.messages.length - 1 });
+    chatState.messages.push({ role: 'error', content: e.message, retryIndex: chatState.messages.length });
     saveChatHistory();
     renderChatMessages();
   }
