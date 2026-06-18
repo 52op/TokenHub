@@ -122,3 +122,33 @@ export function md5(s) {
   }
   return hex;
 }
+
+var CF_URL_RE = /\/client\/v4\/accounts\/([^/]+)\/ai/;
+
+export function isCloudflareUrl(url) {
+  return CF_URL_RE.test(url);
+}
+
+export function extractAccountId(url) {
+  var m = url.match(CF_URL_RE);
+  return m ? m[1] : null;
+}
+
+export async function fetchCloudflareModels(baseUrl, apiKey) {
+  var accountId = extractAccountId(baseUrl);
+  if (!accountId) return null;
+  var searchUrl = "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/ai/models/search?per_page=100";
+  var headers = { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" };
+  try {
+    var resp = await fetchWithTimeout(searchUrl, { method: "GET", headers }, 10000);
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (data.success && Array.isArray(data.result)) {
+      var models = data.result.map(function(m) { return m.name || ""; }).filter(Boolean);
+      return models.length > 0 ? models : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

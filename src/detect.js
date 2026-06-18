@@ -1,5 +1,5 @@
 import { PROBE_TABLE, PROBE_PAYLOADS, COMMON_MODELS } from "./config.js";
-import { normalizeUrl, buildHeaders, fetchWithTimeout, isEndpointAlive, isApiResponse } from "./utils.js";
+import { normalizeUrl, buildHeaders, fetchWithTimeout, isEndpointAlive, isApiResponse, isCloudflareUrl, fetchCloudflareModels } from "./utils.js";
 
 export async function discoverBaseUrls(inputUrl, apiKey) {
   const base = normalizeUrl(inputUrl);
@@ -99,6 +99,16 @@ export async function detectProtocols(base, apiKey) {
 
 export async function detectModels(base, apiKey, protocols) {
   const result = { fromApi: false, models: [] };
+
+  // Cloudflare Workers AI: use models/search API
+  if (isCloudflareUrl(base) && apiKey) {
+    var cfModels = await fetchCloudflareModels(base, apiKey);
+    if (cfModels && cfModels.length > 0) {
+      result.fromApi = true;
+      result.models = cfModels.map(function(m) { return { id: m }; });
+      return result;
+    }
+  }
 
   const modelsUrl = base + "/models";
   const headers = buildHeaders(apiKey, "openai");

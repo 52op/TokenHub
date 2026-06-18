@@ -1,9 +1,16 @@
-import { jsonResponse, errorResponse, buildHeaders, fetchWithTimeout } from "../utils.js";
+import { jsonResponse, errorResponse, buildHeaders, fetchWithTimeout, isCloudflareUrl, fetchCloudflareModels } from "../utils.js";
 
 const ANTHROPIC_MODELS = [
   "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-sonnet-4-5-20250514",
   "claude-haiku-4-5-20251001", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
   "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307",
+];
+
+const CF_HARDCODED = [
+  "@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "@cf/moonshotai/kimi-k2.6", "@cf/qwen/qwen2.5-72b-instruct",
+  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "@cf/openai/gpt-oss-120b",
+  "@cf/google/gemma-3-27b-it", "@cf/mistral/mistral-large-2",
 ];
 
 async function tryFetchModels(url, apiKey, authType) {
@@ -46,6 +53,14 @@ export async function handleGetModels(request, env) {
 
   if (protocol === "anthropic") {
     return jsonResponse({ models: ANTHROPIC_MODELS, source: "hardcoded" });
+  }
+
+  if (isCloudflareUrl(baseUrl) && apiKey) {
+    var cfModels = await fetchCloudflareModels(baseUrl, apiKey);
+    if (cfModels && cfModels.length > 0) {
+      return jsonResponse({ models: cfModels, source: "cloudflare-api" });
+    }
+    return jsonResponse({ models: CF_HARDCODED, source: "cloudflare-hardcoded" });
   }
 
   const paths = ["/v1/models", "/models", "/v1/model/list"];
