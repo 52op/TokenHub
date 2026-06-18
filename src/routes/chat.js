@@ -64,8 +64,20 @@ export async function handleChat(request, env) {
 
     let reply = "";
     let usage = null;
+    let hasBodyError = false;
+    let bodyErrorMsg = "";
 
     if (parsed) {
+      if (parsed.error) {
+        hasBodyError = true;
+        bodyErrorMsg = parsed.error.message || parsed.error.code || JSON.stringify(parsed.error);
+      } else if (parsed.code && parsed.code >= 400) {
+        hasBodyError = true;
+        bodyErrorMsg = parsed.error?.message || parsed.message || "服务端错误 (code " + parsed.code + ")";
+      }
+    }
+
+    if (parsed && !hasBodyError) {
       if (protocol === "anthropic") {
         const content = parsed.content || [];
         reply = content.map(c => c.text || "").join("");
@@ -81,9 +93,10 @@ export async function handleChat(request, env) {
     return jsonResponse({
       status: resp.status,
       responseTime,
-      ok: resp.ok,
+      ok: resp.ok && !hasBodyError,
       reply,
       usage,
+      error: hasBodyError ? bodyErrorMsg : undefined,
       raw: parsed ? JSON.stringify(parsed).substring(0, 1000) : bodyText.substring(0, 500),
     });
   } catch (e) {
