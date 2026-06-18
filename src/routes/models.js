@@ -1,4 +1,5 @@
-import { jsonResponse, errorResponse, buildHeaders, fetchWithTimeout, isCloudflareUrl, fetchCloudflareModels } from "../utils.js";
+import { jsonResponse, errorResponse, fetchWithTimeout, isCloudflareUrl, fetchCloudflareModels } from "../utils.js";
+import { requireUser } from "../auth.js";
 
 const ANTHROPIC_MODELS = [
   "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-sonnet-4-5-20250514",
@@ -46,10 +47,21 @@ async function tryFetchModels(url, apiKey, authType) {
 export async function handleGetModels(request, env) {
   const url = new URL(request.url);
   const baseUrl = (url.searchParams.get("url") || "").replace(/\/+$/, "");
-  const apiKey = url.searchParams.get("apiKey") || "";
+  const endpointId = url.searchParams.get("endpointId") || "";
+  var apiKey = url.searchParams.get("apiKey") || "";
   const protocol = url.searchParams.get("protocol") || "";
 
   if (!baseUrl) return errorResponse("缺少 url 参数");
+
+  // If endpointId is given, fetch API key from DB
+  if (endpointId) {
+    const user = await requireUser(request, env);
+    if (!user) return errorResponse("未登录", 401);
+    var keyRow = await env.DB.prepare(
+      "SELECT key_value FROM api_keys WHERE endpoint_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+    ).bind(endpointId, user.id).first();
+    if (keyRow) apiKey = keyRow.key_value;
+  }
 
   if (protocol === "anthropic") {
     return jsonResponse({ models: ANTHROPIC_MODELS, source: "hardcoded" });

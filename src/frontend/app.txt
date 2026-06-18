@@ -2176,7 +2176,7 @@ async function fetchModelsForEndpoint(endpointId, url) {
   grid.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> 获取中...</div>';
 
   try {
-    var data = await API.get('/api/models?url=' + encodeURIComponent(url));
+    var data = await API.get('/api/models?url=' + encodeURIComponent(url) + '&endpointId=' + encodeURIComponent(endpointId));
     var models = data.models || [];
     if (models.length === 0) {
       grid.innerHTML = originalHtml;
