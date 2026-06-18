@@ -2394,7 +2394,7 @@ function toggleRawResponse(msgIndex) {
   if (!rawEl) return;
   if (rawEl.style.display === 'none') {
     var m = chatState.messages[msgIndex];
-    rawEl.innerHTML = '<pre style="margin-top:8px;padding:8px;background:var(--surface-card);border-radius:var(--radius-sm);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(m.rawResponse) + '</pre>';
+    rawEl.innerHTML = '<pre style="margin-top:8px;padding:8px;background:var(--surface-card);color:var(--body-strong);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(m.rawResponse) + '</pre>';
     rawEl.style.display = 'block';
   } else {
     rawEl.style.display = 'none';
