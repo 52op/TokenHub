@@ -2344,6 +2344,7 @@ function renderChatMessages() {
   let html = '';
   for (var i = 0; i < chatState.messages.length; i++) {
     var m = chatState.messages[i];
+    var rawBtn = m.rawResponse ? '<button class="btn-small-ghost" style="font-size:11px;margin-top:6px" onclick="toggleRawResponse(' + i + ')">查看原始响应</button><div id="raw-' + i + '" class="raw-response" style="display:none"></div>' : '';
     if (m.role === 'error') {
       html += '<div class="chat-msg error">' +
         '<div class="role" style="color:var(--error)">错误</div>' +
@@ -2351,19 +2352,24 @@ function renderChatMessages() {
           '<div style="color:var(--error);margin-bottom:6px;word-break:break-all">' + escapeHtml(m.content) + '</div>' +
           (m.model || m.protocol ? '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">' + (m.protocol || '') + (m.model ? ' / ' + m.model : '') + '</div>' : '') +
           (m.retryIndex !== undefined ? '<button class="btn btn-small" onclick="retryChatMessage(' + m.retryIndex + ')">重发</button>' : '') +
+          rawBtn +
         '</div>' +
       '</div>';
     } else if (m.role === 'assistant') {
       var usageHtml = m.usage ? '<div style="font-size:11px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px solid var(--hairline)">tokens: ' + escapeHtml(JSON.stringify(m.usage)) + '</div>' : '';
       var timeHtml = m.responseTime ? '<span style="font-size:11px;color:var(--muted);margin-left:8px">' + m.responseTime + 'ms</span>' : '';
+      var contentHtml = m.emptyReply
+        ? '<div style="color:var(--muted);font-style:italic">HTTP 200 但无回复内容</div>'
+        : '<div class="chat-md">' + renderMarkdown(m.content) + '</div>';
       html += '<div class="chat-msg assistant">' +
         '<div class="role">AI' + timeHtml + '</div>' +
         '<div class="content">' +
           '<div style="position:relative">' +
-            '<div class="chat-md">' + renderMarkdown(m.content) + '</div>' +
-            '<button class="btn-small-ghost" style="position:absolute;top:0;right:0;font-size:11px" onclick="copyChatContent(' + i + ')">复制</button>' +
+            contentHtml +
+            (m.content ? '<button class="btn-small-ghost" style="position:absolute;top:0;right:0;font-size:11px" onclick="copyChatContent(' + i + ')">复制</button>' : '') +
           '</div>' +
           usageHtml +
+          rawBtn +
         '</div>' +
       '</div>';
     } else {
@@ -2380,6 +2386,18 @@ function renderChatMessages() {
     var userCount = chatState.messages.filter(function(m) { return m.role === 'user'; }).length;
     var asstCount = chatState.messages.filter(function(m) { return m.role === 'assistant'; }).length;
     counter.textContent = chatState.messages.length ? '(' + userCount + '问/' + asstCount + '答)' : '';
+  }
+}
+
+function toggleRawResponse(msgIndex) {
+  var rawEl = document.getElementById('raw-' + msgIndex);
+  if (!rawEl) return;
+  if (rawEl.style.display === 'none') {
+    var m = chatState.messages[msgIndex];
+    rawEl.innerHTML = '<pre style="margin-top:8px;padding:8px;background:var(--surface-card);border-radius:var(--radius-sm);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(m.rawResponse) + '</pre>';
+    rawEl.style.display = 'block';
+  } else {
+    rawEl.style.display = 'none';
   }
 }
 
@@ -2505,18 +2523,18 @@ async function sendChatMessage(endpointId, retryContent) {
 
     if (data.ok) {
       var reply = data.reply || '';
+      var rawBody = data.body ? JSON.stringify(data.body, null, 2) : '';
       if (reply) {
-        chatState.messages.push({ role: 'assistant', content: reply, usage: data.usage, responseTime: data.responseTime, model: model, protocol: protocol, ts: Date.now() });
+        chatState.messages.push({ role: 'assistant', content: reply, usage: data.usage, responseTime: data.responseTime, model: model, protocol: protocol, ts: Date.now(), rawResponse: rawBody });
       } else {
-        // API ok but empty reply - show raw body
-        var bodyStr = data.body ? JSON.stringify(data.body).substring(0, 500) : '（空响应）';
-        chatState.messages.push({ role: 'assistant', content: '[HTTP ' + data.status + '] ' + bodyStr, usage: data.usage, responseTime: data.responseTime, model: model, protocol: protocol, ts: Date.now() });
+        // API ok but empty reply
+        chatState.messages.push({ role: 'assistant', content: '', emptyReply: true, usage: data.usage, responseTime: data.responseTime, model: model, protocol: protocol, ts: Date.now(), rawResponse: rawBody || '（空响应）' });
       }
     } else {
       var errMsg = 'HTTP ' + data.status;
       if (data.error) errMsg += ': ' + data.error;
-      else if (data.body) errMsg += ': ' + JSON.stringify(data.body).substring(0, 200);
-      chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length - 1, model: model, protocol: protocol });
+      var rawBody = data.body ? JSON.stringify(data.body, null, 2) : '';
+      chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length - 1, model: model, protocol: protocol, rawResponse: rawBody });
     }
     saveChatHistory();
     renderChatMessages();

@@ -10,3 +10,4 @@ DESIGN-*.md
 response.html
 migration_*.sql
 package-lock.json
+dist/
