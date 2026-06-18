@@ -997,7 +997,7 @@ function renderDashboard() {
   return '<div class="container">' +
     '<div id="dashboardSummary" style="margin-bottom:20px"></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
-      '<h2 class="display-sm">我的接口 <span id="dashCacheBadge" style="font-size:11px;font-weight:400;color:var(--muted)"></span></h2>' +
+      '<h2 class="display-sm">我的接口 <span id="dashCacheBadge" style="font-size:11px;font-weight:400;color:var(--muted)"></span> <span id="dashPageBadge" style="font-size:13px;font-weight:400;color:var(--muted)"></span></h2>' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-small-ghost" onclick="refreshDashboard()" title="手动刷新">⟳</button>' +
         '<button class="btn btn-secondary" onclick="showImportDialog()">导入</button>' +
@@ -1267,6 +1267,8 @@ async function loadDashboard(force) {
     renderDashboardTable(endpoints, total, filterProto, filterModel);
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
+    var pg = document.getElementById('dashPageBadge');
+    if (pg) pg.textContent = '';
   }
 }
 
@@ -1274,10 +1276,14 @@ function renderDashboardTable(endpoints, total, filterProto, filterModel) {
   var el = document.getElementById('endpointTable');
   if (!el) return;
   var totalPages = Math.ceil(total / dashLimit);
+  var pg = document.getElementById('dashPageBadge');
+  if (pg) pg.textContent = totalPages > 1 ? (dashPage + '/' + totalPages + ' 页') : (total > 0 ? '共 ' + total + ' 条' : '');
 
   if (endpoints.length === 0) {
     el.innerHTML = '<div class="empty-state">没有匹配的接口</div>';
     document.getElementById('endpointPagination').innerHTML = '';
+    var pg = document.getElementById('dashPageBadge');
+    if (pg) pg.textContent = '';
     return;
   }
 
