@@ -1,7 +1,8 @@
 import * as db from "../db.js";
-import { jsonResponse, errorResponse } from "../utils.js";
+import { jsonResponse, errorResponse, fetchWithTimeout, buildHeaders } from "../utils.js";
 import { requireUser } from "../auth.js";
 import { runDetection } from "../detect.js";
+import { PROBE_PAYLOADS } from "../config.js";
 
 export async function handleList(request, env) {
   const user = await requireUser(request, env);
@@ -75,7 +76,7 @@ export async function handleRedetect(request, env, id) {
   if (!endpoint) return errorResponse("未找到", 404);
 
   const keyRow = await env.DB.prepare(
-    "SELECT key_value FROM api_keys WHERE endpoint_id = ? AND user_id = ? LIMIT 1"
+    "SELECT id, key_value FROM api_keys WHERE endpoint_id = ? AND user_id = ? LIMIT 1"
   ).bind(id, user.id).first();
   const apiKey = keyRow?.key_value || "";
   const result = await runDetection(endpoint.url, apiKey);
@@ -92,6 +93,25 @@ export async function handleRedetect(request, env, id) {
       }
     }
     await db.updateEndpointDetection(env, id, user.id, JSON.stringify(protos), JSON.stringify([...new Set(models)]));
+
+    // Also health-check the first key so is_alive updates
+    if (keyRow && apiKey) {
+      try {
+        const probeUrl = endpoint.url.replace(/\/+$/, "") + "/chat/completions";
+        const start = Date.now();
+        const resp = await fetchWithTimeout(probeUrl, {
+          method: "POST",
+          headers: buildHeaders(apiKey, "openai"),
+          body: JSON.stringify(PROBE_PAYLOADS.openai_chat),
+        }, 10000);
+        const status = resp.status;
+        const isAlive = (status >= 200 && status < 300) || [400, 401, 403, 422, 429].includes(status);
+        const responseTime = Date.now() - start;
+        await db.updateKeyCheckResult(env, keyRow.id, isAlive ? status : 0, responseTime);
+      } catch (e) {
+        // key check failed, don't block detection result
+      }
+    }
   }
 
   return jsonResponse(result);
