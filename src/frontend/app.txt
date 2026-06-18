@@ -408,14 +408,17 @@ const API = {
 };
 
 function navigate(path) {
+  var isSamePath = (path === location.pathname);
   history.pushState(null, '', path);
-  renderPage();
+  renderPage(!isSamePath);
   return false;
 }
 
 window.addEventListener('popstate', renderPage);
 
-async function renderPage() {
+var _currentPage = '';
+
+async function renderPage(fromNav) {
   const path = location.pathname;
   const app = document.getElementById('app');
   if (!app) return;
@@ -426,28 +429,30 @@ async function renderPage() {
     return;
   }
 
+  // Skip full re-render if navigating within the same page (e.g. anchor, back/forward)
+  var isSamePage = (path === _currentPage && !fromNav);
+
   try {
     if (path === '/' || path === '') {
-      app.innerHTML = renderDetectPage();
-      restoreDetectForm();
+      if (!isSamePage) { app.innerHTML = renderDetectPage(); restoreDetectForm(); }
       loadRecentDetections();
     } else if (path === '/app') {
-      app.innerHTML = renderDashboard();
-      restoreDashState();
+      if (!isSamePage) { app.innerHTML = renderDashboard(); restoreDashState(); }
       await loadDashboard();
     } else if (path.startsWith('/app/endpoint/')) {
       const id = path.split('/')[3];
-      app.innerHTML = renderEndpointDetail(id);
+      if (!isSamePage) { app.innerHTML = renderEndpointDetail(id); }
       await loadEndpointDetail(id);
     } else if (path === '/app/health') {
-      app.innerHTML = renderHealthPage();
+      if (!isSamePage) { app.innerHTML = renderHealthPage(); }
       await loadHealthPage();
     } else if (path === '/app/admin') {
-      app.innerHTML = renderAdminPage();
+      if (!isSamePage) { app.innerHTML = renderAdminPage(); }
       await loadAdminPage();
     } else {
       app.innerHTML = '<div class="container" style="padding:48px;text-align:center;color:var(--muted)">页面未找到</div>';
     }
+    _currentPage = path;
   } catch (e) {
     app.innerHTML = '<div class="container" style="padding:48px"><div class="error-panel">' + escapeHtml(e.message) + '</div></div>';
   }
@@ -1159,7 +1164,9 @@ async function loadDashboard() {
   var filterTag = document.getElementById('filterTag')?.value || '';
   var el = document.getElementById('endpointTable');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  if (!el.innerHTML.trim()) {
+    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  }
   loadDashboardSummary();
   loadTagFilter();
 
@@ -1957,7 +1964,9 @@ function renderEndpointDetail(id) {
 async function loadEndpointDetail(id) {
   const el = document.getElementById('endpointDetail');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  if (!el.innerHTML.trim()) {
+    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  }
 
   try {
     const data = await API.get('/api/endpoints/' + id);
@@ -2526,7 +2535,9 @@ async function loadHealthHistory() {
   if (!el) return;
   var days = document.getElementById('healthDays')?.value || 7;
   var endpointId = document.getElementById('healthEndpointFilter')?.value || '';
-  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  if (!el.innerHTML.trim()) {
+    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  }
 
   try {
     var url = '/api/health/history?days=' + days;
@@ -2639,7 +2650,9 @@ async function loadAdminPage() {
   const el = document.getElementById('adminUserList');
   if (!el) return;
   const search = document.getElementById('adminSearch')?.value || '';
-  el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  if (!el.innerHTML.trim()) {
+    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
+  }
 
   try {
     const data = await API.get('/api/admin/users?search=' + encodeURIComponent(search));
