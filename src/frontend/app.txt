@@ -2523,7 +2523,7 @@ async function sendChatMessage(endpointId, retryContent) {
 
     if (data.ok) {
       var reply = data.reply || '';
-      var rawBody = data.body ? JSON.stringify(data.body, null, 2) : '';
+      var rawBody = data.raw || '';
       if (reply) {
         chatState.messages.push({ role: 'assistant', content: reply, usage: data.usage, responseTime: data.responseTime, model: model, protocol: protocol, ts: Date.now(), rawResponse: rawBody });
       } else {
@@ -2533,7 +2533,7 @@ async function sendChatMessage(endpointId, retryContent) {
     } else {
       var errMsg = 'HTTP ' + data.status;
       if (data.error) errMsg += ': ' + data.error;
-      var rawBody = data.body ? JSON.stringify(data.body, null, 2) : '';
+      var rawBody = data.raw || '';
       chatState.messages.push({ role: 'error', content: errMsg, retryIndex: chatState.messages.length - 1, model: model, protocol: protocol, rawResponse: rawBody });
     }
     saveChatHistory();
