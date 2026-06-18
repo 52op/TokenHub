@@ -341,6 +341,7 @@ async function quickAddEndpoint() {
       showToast(existed ? '接口已存在，已更新' : '已保存到仪表盘');
     }
     clearPendingModels(baseUrl);
+    invalidateDashCache();
     navigate('/app');
   } catch (e) {
     showToast('保存失败: ' + e.message, 'error');
@@ -830,6 +831,7 @@ function renderSendResult(data, url, apiKey, path, model, message) {
 }
 
 async function saveEndpoint() {
+  invalidateDashCache();
   if (!isLoggedIn()) { showToast('请先登录后再保存', 'info'); doLogin(); return; }
   const url = document.getElementById('detectUrl').value.trim();
   if (!url) return showToast('缺少 URL', 'info');
@@ -862,6 +864,7 @@ async function saveEndpoint() {
   clearPendingModels(url);
   detectedData = null;
   showToast('保存成功！');
+  invalidateDashCache();
   navigate('/app');
 }
 
@@ -994,8 +997,9 @@ function renderDashboard() {
   return '<div class="container">' +
     '<div id="dashboardSummary" style="margin-bottom:20px"></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
-      '<h2 class="display-sm">我的接口</h2>' +
+      '<h2 class="display-sm">我的接口 <span id="dashCacheBadge" style="font-size:11px;font-weight:400;color:var(--muted)"></span></h2>' +
       '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-small-ghost" onclick="refreshDashboard()" title="手动刷新">⟳</button>' +
         '<button class="btn btn-secondary" onclick="showImportDialog()">导入</button>' +
         '<div style="position:relative;display:inline-block">' +
           '<button class="btn btn-secondary" onclick="toggleExportMenu()">导出 ▾</button>' +
@@ -1044,6 +1048,17 @@ var dashPage = 1;
 var dashLimit = 20;
 var dashSort = 'created_at';
 var dashOrder = 'desc';
+
+// Dashboard cache
+var _dashCache = { endpoints: null, summary: null, tags: null, ts: 0, version: 0 };
+function invalidateDashCache() { _dashCache.version++; }
+function buildCacheKey() {
+  var s = document.getElementById('searchInput')?.value || '';
+  var p = document.getElementById('filterProtocol')?.value || '';
+  var m = document.getElementById('filterModel')?.value || '';
+  var t = document.getElementById('filterTag')?.value || '';
+  return s + '|' + p + '|' + m + '|' + t + '|' + dashPage + '|' + dashLimit + '|' + dashSort + '|' + dashOrder;
+}
 
 function toggleSearchClear() {
   var el = document.getElementById('searchClear');
@@ -1116,6 +1131,23 @@ function renderModelDropdownItems(models) {
   dd.innerHTML = html;
 }
 
+function updateCacheBadge() {
+  var badge = document.getElementById('dashCacheBadge');
+  if (!badge) return;
+  if (_dashCache.ts) {
+    var d = new Date(_dashCache.ts);
+    var t = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+    badge.textContent = '⏱ ' + t;
+  } else {
+    badge.textContent = '';
+  }
+}
+
+function refreshDashboard() {
+  _dashCache = { endpoints: null, summary: null, tags: null, ts: 0, version: _dashCache.version };
+  loadDashboard(true);
+}
+
 function selectDashModel(model) {
   var inp = document.getElementById('filterModel');
   var dd = document.getElementById('modelDropdown');
@@ -1157,13 +1189,31 @@ function restoreDashState() {
   } catch (e) { return false; }
 }
 
-async function loadDashboard() {
+var _dashLoadCount = 0;
+
+async function loadDashboard(force) {
   var search = document.getElementById('searchInput')?.value || '';
   var filterProto = document.getElementById('filterProtocol')?.value || '';
   var filterModel = document.getElementById('filterModel')?.value.trim() || '';
   var filterTag = document.getElementById('filterTag')?.value || '';
   var el = document.getElementById('endpointTable');
   if (!el) return;
+
+  var cacheKey = buildCacheKey();
+  var cached = _dashCache.endpoints;
+  var useCache = !force && cached && cached._key === cacheKey && cached._ver === _dashCache.version;
+
+  // Render cached endpoints immediately if available
+  if (useCache) {
+    renderDashboardTable(cached.endpoints, cached.total, cached.filterProto, cached.filterModel);
+    saveDashState();
+    allDashModels = cached.allDashModels || [];
+    updateCacheBadge();
+    loadDashboardSummary(true);
+    loadTagFilter(true);
+    return;
+  }
+
   if (!el.innerHTML.trim()) {
     el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">加载中...</div>';
   }
@@ -1190,6 +1240,10 @@ async function loadDashboard() {
     allDashModels = Object.keys(modelSet).sort();
     saveDashState();
 
+    // Store original before client-side filter
+    var rawEndpoints = endpoints;
+    var rawTotal = total;
+
     if (filterProto) {
       endpoints = endpoints.filter(function(ep) {
         try { var p = JSON.parse(ep.protocols); return p && p[filterProto]; } catch { return false; }
@@ -1205,92 +1259,103 @@ async function loadDashboard() {
       });
     }
 
-    var totalPages = Math.ceil(total / dashLimit);
+    // Update cache
+    _dashCache.endpoints = { _key: cacheKey, _ver: _dashCache.version, endpoints: rawEndpoints, total: rawTotal, filterProto: filterProto, filterModel: filterModel, allDashModels: allDashModels };
+    _dashCache.ts = Date.now();
+    updateCacheBadge();
 
-    if (endpoints.length === 0) {
-      el.innerHTML = '<div class="empty-state">没有匹配的接口</div>';
-      document.getElementById('endpointPagination').innerHTML = '';
-      return;
-    }
-
-    var sortIcon = function(col) {
-      if (dashSort !== col) return '';
-      return dashOrder === 'asc' ? ' ↑' : ' ↓';
-    };
-    
-    var html = '<table class="health-table">' +
-      '<tr>' +
-        '<th style="width:30px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /></th>' +
-        '<th style="cursor:pointer" onclick="dashSortBy(\'name\')">名称' + sortIcon('name') + '</th>' +
-        '<th style="cursor:pointer" onclick="dashSortBy(\'url\')">URL' + sortIcon('url') + '</th>' +
-        '<th>协议</th>' +
-        '<th>模型</th>' +
-        '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\'created_at\')">创建时间' + sortIcon('created_at') + '</th>' +
-        '<th style="width:60px;cursor:pointer" onclick="dashSortBy(\'key_count\')">Key' + sortIcon('key_count') + '</th>' +
-        '<th style="width:90px">操作</th>' +
-      '</tr>';
-
-    for (var i = 0; i < endpoints.length; i++) {
-      var ep = endpoints[i];
-      var protos = (function() { try { var p = JSON.parse(ep.protocols); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
-      var protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
-      var protoHtml = protoKeys.map(function(k) {
-        var labels = { openai_chat: 'Chat', openai_responses: 'Resp', anthropic: 'Anth' };
-        var colors = { openai_chat: 'badge-green', openai_responses: 'badge-blue', anthropic: 'badge-purple' };
-        return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
-      }).join(' ');
-
-      var models = (function() { try { var m = JSON.parse(ep.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
-      var modelHtml = models.length > 0
-        ? '<span style="font-size:12px;color:var(--muted)" title="' + escapeHtml(models.join(', ')) + '">' + models.length + ' 个</span>'
-        : '<span style="color:var(--muted)">-</span>';
-
-      var link = '/app/endpoint/' + ep.id;
-      var linkOnclick = 'event.preventDefault();navigate(\'/app/endpoint/' + ep.id + '\')';
-
-      var healthDot = ep.is_alive
-        ? '<span class="dot dot-green" title="存活" style="margin-right:4px"></span>'
-        : (ep.key_count > 0 ? '<span class="dot dot-gray" title="未检测" style="margin-right:4px"></span>' : '');
-
-      var tagHtml = (ep.tags && ep.tags.length > 0)
-        ? ep.tags.map(function(t) { return '<span class="badge badge-blue" style="font-size:10px;margin-right:2px">' + escapeHtml(t) + '</span>'; }).join('')
-        : '';
-      
-      html += '<tr id="ep-row-' + ep.id + '">' +
-        '<td><input type="checkbox" class="ep-cb" data-id="' + ep.id + '" /></td>' +
-        '<td>' + healthDot + '<a href="' + link + '" onclick="' + linkOnclick + '" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a>' + (tagHtml ? '<div style="margin-top:2px">' + tagHtml + '</div>' : '') + '</td>' +
-        '<td class="cell-url" style="max-width:300px"><a href="' + link + '" onclick="' + linkOnclick + '" style="color:var(--text-link)">' + escapeHtml(ep.url) + '</a></td>' +
-        '<td>' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</td>' +
-        '<td>' + modelHtml + '</td>' +
-        '<td class="cell-time">' + formatTime(ep.created_at) + '</td>' +
-        '<td style="text-align:center">' + (ep.key_count || 0) + '</td>' +
-        '<td style="white-space:nowrap;text-align:right"><button class="btn-icon" title="检测" onclick="event.stopPropagation();detectEndpointRow(\'' + ep.id + '\')" style="color:var(--text-link)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></button> <button class="btn-icon" title="编辑" onclick="event.stopPropagation();editEndpointRow(\'' + ep.id + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button> <button class="btn-icon" title="删除" onclick="event.stopPropagation();deleteEndpointRow(\'' + ep.id + '\')" style="color:var(--error)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td>' +
-      '</tr>';
-      html += '<tr id="ep-edit-' + ep.id + '" style="display:none"><td colspan="8" id="ep-edit-cell-' + ep.id + '"></td></tr>';
-    }
-    html += '</table>';
-    el.innerHTML = html;
-
-    var pagEl = document.getElementById('endpointPagination');
-    if (totalPages <= 1) {
-      pagEl.innerHTML = '<div style="text-align:center;padding:12px;font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</div>';
-    } else {
-      var pagHtml = '<div style="display:flex;justify-content:center;align-items:center;gap:8px;padding:16px">' +
-        '<button class="btn btn-small" onclick="dashGoPage(1)"' + (dashPage <= 1 ? ' disabled' : '') + '>首页</button>' +
-        '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage - 1) + ')"' + (dashPage <= 1 ? ' disabled' : '') + '>上一页</button>';
-      var startPage = Math.max(1, dashPage - 2);
-      var endPage = Math.min(totalPages, dashPage + 2);
-      for (var p = startPage; p <= endPage; p++) {
-        pagHtml += '<button class="btn btn-small' + (p === dashPage ? ' btn-primary' : '') + '" onclick="dashGoPage(' + p + ')">' + p + '</button>';
-      }
-      pagHtml += '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage + 1) + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>下一页</button>' +
-        '<button class="btn btn-small" onclick="dashGoPage(' + totalPages + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>末页</button>' +
-        '<span style="font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</span>' +
-      '</div>';
-      pagEl.innerHTML = pagHtml;
-    }
+    renderDashboardTable(endpoints, total, filterProto, filterModel);
   } catch (e) {
     el.innerHTML = '<div class="error-panel">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderDashboardTable(endpoints, total, filterProto, filterModel) {
+  var el = document.getElementById('endpointTable');
+  if (!el) return;
+  var totalPages = Math.ceil(total / dashLimit);
+
+  if (endpoints.length === 0) {
+    el.innerHTML = '<div class="empty-state">没有匹配的接口</div>';
+    document.getElementById('endpointPagination').innerHTML = '';
+    return;
+  }
+
+  var sortIcon = function(col) {
+    if (dashSort !== col) return '';
+    return dashOrder === 'asc' ? ' ↑' : ' ↓';
+  };
+  
+  var html = '<table class="health-table">' +
+    '<tr>' +
+      '<th style="width:30px"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll()" /></th>' +
+      '<th style="cursor:pointer" onclick="dashSortBy(\'name\')">名称' + sortIcon('name') + '</th>' +
+      '<th style="cursor:pointer" onclick="dashSortBy(\'url\')">URL' + sortIcon('url') + '</th>' +
+      '<th>协议</th>' +
+      '<th>模型</th>' +
+      '<th style="cursor:pointer;white-space:nowrap" onclick="dashSortBy(\'created_at\')">创建时间' + sortIcon('created_at') + '</th>' +
+      '<th style="width:60px;cursor:pointer" onclick="dashSortBy(\'key_count\')">Key' + sortIcon('key_count') + '</th>' +
+      '<th style="width:90px">操作</th>' +
+    '</tr>';
+
+  for (var i = 0; i < endpoints.length; i++) {
+    var ep = endpoints[i];
+    var protos = (function() { try { var p = JSON.parse(ep.protocols); return p && typeof p === 'object' && !Array.isArray(p) ? p : {}; } catch { return {}; } })();
+    var protoKeys = Object.keys(protos).filter(function(k) { return protos[k]; });
+    var protoHtml = protoKeys.map(function(k) {
+      var labels = { openai_chat: 'Chat', openai_responses: 'Resp', anthropic: 'Anth' };
+      var colors = { openai_chat: 'badge-green', openai_responses: 'badge-blue', anthropic: 'badge-purple' };
+      return '<span class="badge ' + (colors[k] || 'badge-green') + '">' + (labels[k] || k) + '</span>';
+    }).join(' ');
+
+    var models = (function() { try { var m = JSON.parse(ep.models || '[]'); return Array.isArray(m) ? m : []; } catch { return []; } })();
+    var modelHtml = models.length > 0
+      ? '<span style="font-size:12px;color:var(--muted)" title="' + escapeHtml(models.join(', ')) + '">' + models.length + ' 个</span>'
+      : '<span style="color:var(--muted)">-</span>';
+
+    var link = '/app/endpoint/' + ep.id;
+    var linkOnclick = 'event.preventDefault();navigate(\'/app/endpoint/' + ep.id + '\')';
+
+    var healthDot = ep.is_alive
+      ? '<span class="dot dot-green" title="存活" style="margin-right:4px"></span>'
+      : (ep.key_count > 0 ? '<span class="dot dot-gray" title="未检测" style="margin-right:4px"></span>' : '');
+
+    var tagHtml = (ep.tags && ep.tags.length > 0)
+      ? ep.tags.map(function(t) { return '<span class="badge badge-blue" style="font-size:10px;margin-right:2px">' + escapeHtml(t) + '</span>'; }).join('')
+      : '';
+    
+    html += '<tr id="ep-row-' + ep.id + '">' +
+      '<td><input type="checkbox" class="ep-cb" data-id="' + ep.id + '" /></td>' +
+      '<td>' + healthDot + '<a href="' + link + '" onclick="' + linkOnclick + '" style="font-weight:500">' + escapeHtml(ep.name || ep.url) + '</a>' + (tagHtml ? '<div style="margin-top:2px">' + tagHtml + '</div>' : '') + '</td>' +
+      '<td class="cell-url" style="max-width:300px"><a href="' + link + '" onclick="' + linkOnclick + '" style="color:var(--text-link)">' + escapeHtml(ep.url) + '</a></td>' +
+      '<td>' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</td>' +
+      '<td>' + modelHtml + '</td>' +
+      '<td class="cell-time">' + formatTime(ep.created_at) + '</td>' +
+      '<td style="text-align:center">' + (ep.key_count || 0) + '</td>' +
+      '<td style="white-space:nowrap;text-align:right"><button class="btn-icon" title="检测" onclick="event.stopPropagation();detectEndpointRow(\'' + ep.id + '\')" style="color:var(--text-link)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></button> <button class="btn-icon" title="编辑" onclick="event.stopPropagation();editEndpointRow(\'' + ep.id + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button> <button class="btn-icon" title="删除" onclick="event.stopPropagation();deleteEndpointRow(\'' + ep.id + '\')" style="color:var(--error)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td>' +
+    '</tr>';
+    html += '<tr id="ep-edit-' + ep.id + '" style="display:none"><td colspan="8" id="ep-edit-cell-' + ep.id + '"></td></tr>';
+  }
+  html += '</table>';
+  el.innerHTML = html;
+
+  var pagEl = document.getElementById('endpointPagination');
+  if (totalPages <= 1) {
+    pagEl.innerHTML = '<div style="text-align:center;padding:12px;font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</div>';
+  } else {
+    var pagHtml = '<div style="display:flex;justify-content:center;align-items:center;gap:8px;padding:16px">' +
+      '<button class="btn btn-small" onclick="dashGoPage(1)"' + (dashPage <= 1 ? ' disabled' : '') + '>首页</button>' +
+      '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage - 1) + ')"' + (dashPage <= 1 ? ' disabled' : '') + '>上一页</button>';
+    var startPage = Math.max(1, dashPage - 2);
+    var endPage = Math.min(totalPages, dashPage + 2);
+    for (var p = startPage; p <= endPage; p++) {
+      pagHtml += '<button class="btn btn-small' + (p === dashPage ? ' btn-primary' : '') + '" onclick="dashGoPage(' + p + ')">' + p + '</button>';
+    }
+    pagHtml += '<button class="btn btn-small" onclick="dashGoPage(' + (dashPage + 1) + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>下一页</button>' +
+      '<button class="btn btn-small" onclick="dashGoPage(' + totalPages + ')"' + (dashPage >= totalPages ? ' disabled' : '') + '>末页</button>' +
+      '<span style="font-size:13px;color:var(--muted)">共 ' + total + ' 个接口</span>' +
+    '</div>';
+    pagEl.innerHTML = pagHtml;
   }
 }
 
@@ -1320,6 +1385,7 @@ async function deleteEndpointRow(id) {
   await API.del('/api/endpoints/' + id);
   var row = document.getElementById('ep-row-' + id);
   if (row) row.remove();
+  invalidateDashCache();
   showToast('已删除');
 }
 
@@ -1330,6 +1396,7 @@ async function detectEndpointRow(id) {
   try {
     var data = await API.post('/api/endpoints/' + id + '/redetect');
     showToast('检测完成: ' + (data.success ? '成功' : '失败'), data.success ? 'success' : 'error');
+    invalidateDashCache();
     await loadDashboard();
   } catch (e) {
     showToast('检测失败: ' + e.message, 'error');
@@ -1348,6 +1415,7 @@ async function batchDeleteEndpoints() {
     await API.post('/api/endpoints/batch-delete', { ids: ids });
     showToast('已删除 ' + ids.length + ' 个接口', 'success');
     if (btn) { btn.disabled = false; btn.textContent = '删除选中'; }
+    invalidateDashCache();
     await loadDashboard();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '删除选中'; }
@@ -1356,9 +1424,13 @@ async function batchDeleteEndpoints() {
 }
 
 // ========== Dashboard Summary Cards ==========
-async function loadDashboardSummary() {
+async function loadDashboardSummary(useCache) {
   var el = document.getElementById('dashboardSummary');
   if (!el) return;
+  if (useCache && _dashCache.summary) {
+    el.innerHTML = _dashCache.summary;
+    return;
+  }
   try {
     var data = await API.get('/api/health/summary');
     var aliveRate = data.total_endpoints > 0 ? Math.round((data.alive_keys / data.total_endpoints) * 100) : 0;
@@ -1369,12 +1441,13 @@ async function loadDashboardSummary() {
     for (var k in pd) {
       protoHtml += '<span class="badge ' + (protoColors[k] || 'badge-green') + '" style="margin-right:4px">' + (protoLabels[k] || k) + ' ' + pd[k] + '</span>';
     }
-    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">' +
+    _dashCache.summary = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">' +
       '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:var(--ink)">' + data.total_endpoints + '</div><div style="font-size:12px;color:var(--muted)">总接口</div></div>' +
       '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:var(--ink)">' + (data.total_keys || 0) + '</div><div style="font-size:12px;color:var(--muted)">总 Key</div></div>' +
       '<div class="card" style="text-align:center;padding:14px"><div style="font-size:26px;font-weight:600;color:' + (data.alive_keys > 0 ? 'var(--success)' : 'var(--muted)') + '">' + data.alive_keys + '/' + data.total_endpoints + '</div><div style="font-size:12px;color:var(--muted)">接口存活</div></div>' +
       '<div class="card" style="text-align:center;padding:14px"><div style="font-size:14px;font-weight:500;margin-top:4px">' + (protoHtml || '<span style="color:var(--muted)">-</span>') + '</div><div style="font-size:12px;color:var(--muted);margin-top:4px">协议分布</div></div>' +
     '</div>';
+    el.innerHTML = _dashCache.summary;
   } catch (e) {}
 }
 
@@ -1416,6 +1489,7 @@ async function saveEndpointInline(id) {
       await API.put('/api/endpoints/' + id + '/tags', { tags: tags });
     }
     showToast('已保存');
+    invalidateDashCache();
     await loadDashboard();
   } catch (e) {
     showToast('保存失败: ' + e.message, 'error');
@@ -1423,17 +1497,25 @@ async function saveEndpointInline(id) {
 }
 
 // ========== Tag Filter & Management (Task 7) ==========
-async function loadTagFilter() {
+async function loadTagFilter(useCache) {
   var sel = document.getElementById('filterTag');
   if (!sel) return;
+  if (useCache && _dashCache.tags) {
+    var currentVal = sel.value;
+    sel.innerHTML = _dashCache.tags;
+    sel.value = currentVal;
+    return;
+  }
   var currentVal = sel.value;
   try {
     var data = await API.get('/api/tags');
     var tags = data.tags || [];
-    sel.innerHTML = '<option value="">全部标签</option>';
+    var html = '<option value="">全部标签</option>';
     for (var i = 0; i < tags.length; i++) {
-      sel.innerHTML += '<option value="' + escapeHtml(tags[i].tag) + '">' + escapeHtml(tags[i].tag) + ' (' + tags[i].count + ')</option>';
+      html += '<option value="' + escapeHtml(tags[i].tag) + '">' + escapeHtml(tags[i].tag) + ' (' + tags[i].count + ')</option>';
     }
+    _dashCache.tags = html;
+    sel.innerHTML = html;
     sel.value = currentVal;
   } catch (e) {}
 }
@@ -1455,6 +1537,7 @@ async function batchCheckEndpoints() {
   }
   showToast('检测完成: 成功 ' + success + ', 失败 ' + fail, success > 0 ? 'success' : 'error');
   if (btn) { btn.disabled = false; btn.textContent = '批量检测'; }
+  invalidateDashCache();
   await loadDashboard();
 }
 
@@ -1478,6 +1561,7 @@ async function fetchAllMissingModels() {
       } catch (e) {}
     }
     showToast('补全完成: ' + success + '/' + missing.length + ' 个接口获取到模型', 'success');
+    invalidateDashCache();
     await loadDashboard();
   } catch (e) {
     showToast('补全失败: ' + e.message, 'error');
@@ -1927,6 +2011,7 @@ async function executeImport() {
   importParsedItems = [];
   var area = document.getElementById('importArea');
   if (area) area.style.display = 'none';
+  invalidateDashCache();
   await loadDashboard();
 }
 
