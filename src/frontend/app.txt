@@ -2203,6 +2203,7 @@ async function fetchModelsForEndpoint(endpointId, url) {
 
     var title = grid.closest('.card')?.querySelector('.caption-uppercase');
     if (title) title.textContent = '模型 (' + merged.length + ')';
+    rebuildChatModels(merged);
 
     showToast('获取到 ' + models.length + ' 个模型，已合并');
   } catch (e) {
@@ -2450,6 +2451,39 @@ function filterModelGrid(inputId, containerId) {
   if (counter) {
     var base = counter.textContent.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\(\d+\/\d+\)\s*$/, '');
     counter.textContent = q ? base + ' (' + shown + '/' + chips.length + ')' : base + ' (' + chips.length + ')';
+  }
+}
+
+function rebuildChatModels(modelList) {
+  var sel = document.getElementById('chatModel');
+  if (!sel) return;
+  var curVal = sel.value || '';
+  if (modelList.length > 0) {
+    if (sel.tagName !== 'SELECT') {
+      var parent = sel.parentNode;
+      var newSel = document.createElement('select');
+      newSel.id = 'chatModel';
+      newSel.className = sel.className;
+      sel.replaceWith(newSel);
+      sel = newSel;
+    }
+    sel.innerHTML = modelList.map(function(m) {
+      var v = typeof m === 'string' ? m : (m.id || '');
+      return '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>';
+    }).join('');
+    if (curVal && modelList.some(function(m) { var v = typeof m === 'string' ? m : (m.id || ''); return v === curVal; })) {
+      sel.value = curVal;
+    }
+  } else {
+    if (sel.tagName === 'SELECT') {
+      var parent = sel.parentNode;
+      var inp = document.createElement('input');
+      inp.id = 'chatModel';
+      inp.className = sel.className;
+      inp.type = 'text';
+      inp.placeholder = '输入模型 ID';
+      sel.replaceWith(inp);
+    }
   }
 }
 
